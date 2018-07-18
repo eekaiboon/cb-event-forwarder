@@ -36,11 +36,12 @@ func ParseConfig(fn string) (map[string]interface{}, error) {
 	return config, err
 }
 
+// tls configs are specified in a dictionary like tls : { tls_client_cert : mycert.cert , tls_clinet_key : mykey.key , tls_verify : true }
 func GetTLSConfigFromCfg(cfg map[interface{}]interface{}) (*tls.Config, error) {
 
 	tlsConfig := &tls.Config{}
 
-	if tlsverifyT, ok := cfg["tls_verify"]; ok {
+	if tlsverifyT, ok := cfg["verify"]; ok {
 		tlsConfig.InsecureSkipVerify = !tlsverifyT.(bool)
 	} else {
 		log.Warn("!!!Disabling TLS verification!!!")
@@ -48,19 +49,19 @@ func GetTLSConfigFromCfg(cfg map[interface{}]interface{}) (*tls.Config, error) {
 	}
 
 	tlsClientCert := ""
-	if tlsClientCertTemp, ok := cfg["tls_client_cert"]; ok {
+	if tlsClientCertTemp, ok := cfg["client_cert"]; ok {
 		tlsClientCert = tlsClientCertTemp.(string)
 	}
 	tlsClientKey := ""
-	if tlsClientKeyTemp, ok := cfg["tls_client_key"]; ok {
+	if tlsClientKeyTemp, ok := cfg["client_key"]; ok {
 		tlsClientKey = tlsClientKeyTemp.(string)
 	}
 	tlsCACert := ""
-	if tlsCACertTemp, ok := cfg["tls_ca_cert"]; ok {
+	if tlsCACertTemp, ok := cfg["ca_cert"]; ok {
 		tlsCACert = tlsCACertTemp.(string)
 	}
 	tlsCName := ""
-	if tlsCNameTemp, ok := cfg["tls_cname"]; ok {
+	if tlsCNameTemp, ok := cfg["cname"]; ok {
 		tlsCName = tlsCNameTemp.(string)
 	}
 	tls12Only := true

@@ -226,9 +226,10 @@ func NewConsumerFromConf(outputMessageFunc func(map[string]interface{}) error, s
 	amqpPassword := ""
 	if temp, ok := consumerCfg["rabbit_mq_password"]; ok {
 		amqpPassword = temp.(string)
-	} else { //load rabbit creds from disk
+	} else { //load rabbit creds from (local) disk
+		 // TODO: make this only happen for 1 input entry , or something along those lines to prevent confusion ?
 		var err error = nil
-		amqpUsername, amqpUsername, err = GetLocalRabbitMQCredentials()
+		amqpUsername, amqpPassword, err = GetLocalRabbitMQCredentials()
 		if err != nil {
 			log.Errorf("Couldn't get rabbit mq credentials from /etc/cb.conf")
 			log.Panic("%v", err)
@@ -259,18 +260,20 @@ func NewConsumerFromConf(outputMessageFunc func(map[string]interface{}) error, s
 	}
 	amqpURI := fmt.Sprintf("%s://%s:%s@%s:%d", scheme, amqpUsername, amqpPassword, amqpHostname, amqpPort)
 
-	var eventMap map[string][]string = make(map[string][]string)
+	var eventMap map[interface{}]interface{} = make(map[interface{}]interface{})
 	var eventNames []string = make([]string, 0)
 	if temp, ok := consumerCfg["event_map"]; ok {
-		t := temp.(map[string][]string)
-		for k, v := range t {
+		t := temp.(map[interface{}]interface{})
+		/**for k, v := range t {
 			eventMap[k] = v
-		}
+		}*/
+		eventMap = t
 	} else {
 		//Default to ALL events
-		eventMap = map[string][]string{"events_watchlist": []string{
-			"watchlist.#",
-		},
+		eventMap = map[interface{}]interface{}{
+			"events_watchlist": []string{
+				"watchlist.#",
+			},
 			"events_feed": []string{
 				"feed.#",
 			},
@@ -293,7 +296,7 @@ func NewConsumerFromConf(outputMessageFunc func(map[string]interface{}) error, s
 				"ingress.event.processblock",
 				"ingress.event.emetmitigation",
 			},
-			"events_binary_observed": []string{
+			"events_binary_observed": [] string {
 				"binaryinfo.#",
 			},
 			"events_binary_upload": []string{
@@ -306,8 +309,14 @@ func NewConsumerFromConf(outputMessageFunc func(map[string]interface{}) error, s
 	}
 
 	for _, names := range eventMap {
-		for _, name := range names {
-			eventNames = append(eventNames, name)
+		if ns, ok :=  names.([]string); ok {
+			for _, name := range ns {
+				eventNames = append(eventNames, name)
+			}
+		} else if ns, ok :=  names.([]interface{}); ok {
+			for _, name := range ns {
+				eventNames = append(eventNames, name.(string))
+			}
 		}
 	}
 
@@ -425,7 +434,7 @@ func (c *Consumer) Connect() error {
 		if err != nil {
 			return err
 		}
-		log.Info("Subscribed to bulk raw sensor event exchange")
+		log.Infof(" Subscribed to bulk raw sensor event exchange on %s",c.CbServerName)
 	}
 
 	for _, key := range c.RoutingKeys {
@@ -433,7 +442,7 @@ func (c *Consumer) Connect() error {
 		if err != nil {
 			return err
 		}
-		log.Infof("Subscribed to %s", key)
+		log.Infof("Subscribed to %s on %s", key,c.CbServerName)
 	}
 
 	deliveries, err := c.Channel.Consume(
@@ -524,7 +533,7 @@ func GetLocalRabbitMQCredentials() (username, password string, err error) {
 	if err != nil {
 		return username, password, err
 	}
-	username, _ = input.Get("", "RabbitMQUser")
+	username, _ = input.Get("cb", "RabbitMQUser")
 	password, _ = input.Get("", "RabbitMQPassword")
 
 	if len(username) == 0 || len(password) == 0 {
@@ -584,6 +593,9 @@ func (c *Consumer) processMessage(body []byte, routingKey, contentType string, h
 	}
 
 	for _, msg := range msgs {
+		//This semantically could be a clustername , as well since the data does not make it easy to disambiguate
+		// The hope is that when multiple distinct CbR's are being managed this will be more helpful than
+		// defaulting all "cb_server" entries to "cbserver" as was done in the past.
 		msg["cb_server"] = c.CbServerName
 		t, ok := msg["type"]
 		if c.PerformFeedPostprocessing && ok && strings.HasPrefix(t.(string), "feed.") {

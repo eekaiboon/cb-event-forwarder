@@ -225,7 +225,7 @@ func GetOutputsFromCfg(cfg []interface{}) ([]OutputHandler, error) {
 							log.Errorf("failed to convert plugin config")
 							switch t := cm.(type) {
 							default:
-								log.Errorf("real type is %T for %s", t, c)
+								log.Errorf("Real type is %T for %s", t, c)
 							}
 
 						}

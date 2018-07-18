@@ -226,7 +226,7 @@ func GetCbEventForwarderFromCfg(config map[string]interface{}) CbEventForwarder 
 	outputcontrolchannels := make([]*chan os.Signal, len(outputconfigs))
 	i := 0
 	for i < len(outputconfigs) {
-		res[i] = make(chan map[string]interface{})
+		res[i] = make(chan map[string]interface{},100)
 		controlchan := make(chan os.Signal, 2)
 		outputcontrolchannels[i] = &controlchan
 		i++
@@ -270,24 +270,37 @@ func GetCbEventForwarderFromCfg(config map[string]interface{}) CbEventForwarder 
 	for cbServerNameI, consumerConf := range consumerconfigs {
 		cbServerName := cbServerNameI.(string)
 		log.Debugf("%s , %s ", cbServerName, consumerConf)
+
 		consumerConfMap, ok := consumerConf.(map[interface{}]interface{})
 		if !ok {
 			conversionFailure(consumerConf)
 		}
+
 		cbServerURL := ""
 		if t, ok := consumerConfMap["cb_server_url"]; ok {
 			cbServerURL = t.(string)
 		}
-		cbapihandler, err := cbapi.CbAPIHandlerFromCfg(consumerConfMap)
-		if err != nil {
-			log.Panicf("%v", err)
 
+		var cbapihandler * cbapi.CbAPIHandler = nil
+
+		if postprocess, ok := consumerConfMap["post_processing"] ; ok {
+			if ppmap, ok := postprocess.(map[interface{}]interface{}); ok {
+				cbapihandler_temp, err := cbapi.CbAPIHandlerFromCfg(ppmap,cbServerURL)
+				if err != nil {
+					log.Panicf("Error getting cbapihandler from configuration: %v", err)
+				} else {
+					cbapihandler = cbapihandler_temp
+				}
+			} else  {
+				log.Panicf("Error getting cbapihandler from configuration: %v", err)
+			}
 		}
+
 		myjsmp := jsonmessageprocessor.JsonMessageProcessor{DebugFlag: debugFlag, DebugStore: debugStore, CbAPI: cbapihandler, CbServerURL: cbServerURL}
 		mypbmp := pbmessageprocessor.PbMessageProcessor{DebugFlag: debugFlag, DebugStore: debugStore, CbServerURL: cbServerURL}
 		c, err := consumer.NewConsumerFromConf(cbef.OutputMessage, cbServerName, cbServerName, consumerConfMap, debugFlag, debugStore, cbef.ConsumerWaitGroup)
 		if err != nil {
-			log.Panicf("%v", err)
+			log.Panicf("Error consturcting consumer from configuration: %v", err)
 		}
 		eventMap := make(map[string]interface{})
 		for _, e := range c.RoutingKeys {
@@ -300,12 +313,16 @@ func GetCbEventForwarderFromCfg(config map[string]interface{}) CbEventForwarder 
 	}
 	return cbef
 }
-
+// The event forwarder GO
+//  The sigs channel should be hooked up to system or similar
+// This controls the event forwarder, and should be used to cause it to gracefully exit/clear output buffers
+// The optional (pass null to opt-out) inputFile argument (usually from commandline) explicity lists an input jsonfile to grab
+// and use for (additional) input
 func (cbef *CbEventForwarder) Go(sigs chan os.Signal, inputFile *string) {
 	cbef.startExpvarPublish()
 
 	if err := cbef.StartOutputs(); err != nil {
-		log.Fatalf("Could not startOutputs: %s", err)
+		log.Fatalf("Could not startOutputs: %v", err)
 	}
 
 	cbef.LaunchConsumers()
@@ -316,7 +333,7 @@ func (cbef *CbEventForwarder) Go(sigs chan os.Signal, inputFile *string) {
 			for {
 				select {
 				case err := <-errChan:
-					log.Infof("%v", err)
+					log.Errorf("Input file processing loop error: %v", err)
 				}
 			}
 		}()
@@ -330,22 +347,23 @@ func (cbef *CbEventForwarder) Go(sigs chan os.Signal, inputFile *string) {
 			switch sig {
 			case syscall.SIGTERM, syscall.SIGINT:
 				//termiante consumers, then outputs
+				log.Info("cb-event-forwarder signalled to shutdown...beginning shutdown")
 				cbef.TerminateConsumers()
 
 				//should also be a method something like 'stopOutputs(sig)'
 				for _, controlchan := range cbef.Controlchans {
-					log.Debugf("Propogating Signal %s to output control channel %s", sig, controlchan)
+					log.Debugf("Propogating Signal %s to output control channel", sig)
 					*controlchan <- sig
 				}
-				log.Debugf("cb-event-forwarder waiting for AMQP consumer(s) to be done")
+				log.Debugf("cb-event-forwarder waiting for AMQP consumer(s) to be done...")
 				cbef.ConsumerWaitGroup.Wait()
-				log.Debugf("cb-event-forwarder service waiting for output(s) to be done")
+				log.Debugf("cb-event-forwarder service waiting for output(s) to be done...")
 				cbef.OutputWaitGroup.Wait()
-				log.Info("cb-event-forwarder service exiting")
+				log.Info("Consumer(s), output(s) finished gracefully - cb-event-forwarder service exiting")
 				return
 			case syscall.SIGHUP: //propgate signals down to the outputs (HUP)
 				for _, controlchan := range cbef.Controlchans {
-					log.Debugf("trying to send  HUP signal to control channel %s", controlchan)
+					log.Debugf("Propogating  HUP signal to output control channel ")
 					*controlchan <- sig
 				}
 			}

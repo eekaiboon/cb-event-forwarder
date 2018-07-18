@@ -61,10 +61,9 @@ type CbAPIHandler struct {
 	CbAPIToken    string
 }
 
-func CbAPIHandlerFromCfg(cfg map[interface{}]interface{}) (*CbAPIHandler, error) {
+func CbAPIHandlerFromCfg(cfg map[interface{}]interface{}, cbServerURL string) (*CbAPIHandler, error) {
 	var tls *tls.Config = nil
 	var err error
-	if postProcessing, ok := cfg["post_process"]; ok && postProcessing.(bool) {
 		if tlsCfgi, ok := cfg["tls"]; ok {
 			tlsCfg, ok := tlsCfgi.(map[interface{}]interface{})
 			if ok {
@@ -79,19 +78,13 @@ func CbAPIHandlerFromCfg(cfg map[interface{}]interface{}) (*CbAPIHandler, error)
 		if t, ok := cfg["proxy_url"]; ok {
 			api_proxy_url = t.(string)
 		}
-		server_url := ""
-		if t, ok := cfg["cb_server_url"]; ok {
-			api_proxy_url = t.(string)
-		}
 		api_token := ""
 		if t, ok := cfg["api_token"]; ok {
 			api_token = t.(string)
 		} else {
 			err = errors.New("Must provide api_token to cbapi post processor")
 		}
-		return NewCbAPIHandler(server_url, api_token, api_proxy_url, tls), err
-	}
-	return nil, nil
+		return NewCbAPIHandler(cbServerURL, api_token, api_proxy_url, tls), err
 }
 
 func NewCbAPIHandler(cbServerURL, cbAPIToken, cbAPIProxyURL string, tls *tls.Config) *CbAPIHandler {

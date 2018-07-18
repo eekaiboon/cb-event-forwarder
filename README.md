@@ -11,7 +11,6 @@ The list of events to collect is configurable.
 By default all feed and watchlist hits, alerts, binary notifications, and raw sensor events are exported into JSON.  The
 configuration file for the connector is stored in `/etc/cb/integrations/event-forwarder/cb-event-forwarder.conf`.
 
-
 The 4.0 Cb Event Forwarder has a three part processing pipeline:
 
 1) input - this section defines a number of consumers each reading from a specific CbR server messaging bus
@@ -19,11 +18,75 @@ The 4.0 Cb Event Forwarder has a three part processing pipeline:
 input: 
     cbserver1:
         cb_server_url: https://zestep-centos-cbresponseserver 
+        # rabbitmq options are opitional, /etc/cb/.conf is used by default
+        # if the folling are ommited
         rabbit_mq_username: cb
         rabbit_mq_hostname: localhost
         rabbit_mq_password:  
 ```
+#Use this boolean option to control the use of the raw sensor exchange
+#defaults to false
+`use_raw_exchange : true`
+
+## Subscribed Events 
+The 4.0 event forwarder subcribes to `all-events` by default though the user
+can specify explicity options for which events to listen to as so:
+(within each individual input element)
+event_map:
+    events_watchlist:
+        - watchlist.#
+    events_feed:
+        - feed.#
+    events_alert:
+        - alert.#
+    events_raw_sensor:
+        - ingress.event.process 
+        - ingress.event.procstart
+        - ingress.event.netconn
+        - ingerss.event.procend
+        - ingress.event.childproc
+        - ingress.event.moduleload
+        - ingress.event.module
+        - ingress.event.filemod
+        - ingress.event.regmod
+        - ingress.event.tamper
+        - ingress.event.crossprocopen
+        - ingress.event.remotethread
+        - ingress.event.processblock
+        - ingress.event.emetmitigation
+    events_binary_observed:
+        - binaryinfo.#
+    events_binary_upload:    
+        - binarystore.#
+    events_storage_parition:
+        - events.partition.#
+
+AMQPs tls can be configured by providing a `tls:` stanza within an individual input: 
+```
+tls:    
+    client_cert: yourcert
+    client_key: yourkey
+    ca_cert: cacert
+    tls_insecure: true # defaults false 
+```
+
+There are optional post processing arguments to enhance messages w/ api
+callbacks (currently just report information)
+```
+post_processing:
+    tls: 
+        verify: false # defaults to true
+        tls_12_only: false # defaults to true 
+        client_cert: client.cert
+        client_key: client.key
+        ca_cert: ca.cert
+    api_proxy_url: proxyurl
+    api_token: apitoken
+```
+Just specify the post processing options within an individual input element.
+    
 2) filter - this section of the pipeline defines an optional template for keeping/droping messages based on their contents. 
+This is a top-level option, along side input: and output: 
 ```
 filter:
     template: >-

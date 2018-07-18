@@ -71,7 +71,7 @@ sdist:
 	dep ensure
 	mkdir -p build/cb-event-forwarder-${GIT_VERSION}/src/${GO_PREFIX}
 	echo "${GIT_VERSION}" > build/cb-event-forwarder-${GIT_VERSION}/VERSION
-	cp -rp Makefile Gopkg.toml cmd static conf internal init-scripts vendor build/cb-event-forwarder-${GIT_VERSION}/src/${GO_PREFIX}
+	cp -rp Makefile Gopkg.toml cmd static conf internal init-scripts vendor plugins  build/cb-event-forwarder-${GIT_VERSION}/src/${GO_PREFIX}
 	cp -rp MANIFEST build/cb-event-forwarder-${GIT_VERSION}/MANIFEST
 	(cd build; tar -cz -f cb-event-forwarder-${GIT_VERSION}.tar.gz cb-event-forwarder-${GIT_VERSION})
 	sleep 1

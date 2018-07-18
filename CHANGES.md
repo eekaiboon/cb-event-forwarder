@@ -16,7 +16,7 @@ The 4.0.0 release of the cb-event-forwarder retains the features of 3x and:
 - Kafa Output changed to output-plugin
     - 'standard-plugin' will be provided with the CbR EF
         - makes a wonderful template for other output plugins 
-    - the kafka-output has been enhaced :
+    - the kafka-output has been enhanced :
         - uses librdkafka/go-confluent-kafka instead of sarama
             -better protocol compliance/support
         - users can now specify arbitrary kafka-producer configs (at their own peril - consider how your broker(s) are configured too) 

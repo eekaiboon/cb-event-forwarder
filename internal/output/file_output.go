@@ -100,6 +100,7 @@ func (o *FileOutput) OpenFileForWriting() error {
 }
 
 func (o *FileOutput) Go(messages <-chan map[string]interface{}, errorChan chan<- error, controlchan <-chan os.Signal, wg sync.WaitGroup) error {
+
 	if o.OutputFile == nil {
 		return errors.New("No output file specified")
 	}
@@ -126,14 +127,14 @@ func (o *FileOutput) Go(messages <-chan map[string]interface{}, errorChan chan<-
 
 			case <-refreshTicker.C:
 				if time.Now().Sub(o.LastRolledOver) >= o.RollOverDuration {
-					log.Info("FILEOUTPUT ROLLOVER DUE TO ELAPSED DURATION")
+					log.Debugf("FILEOUTPUT ROLLOVER DUE TO ELAPSED DURATION")
 					if _, err := o.rollOverFile("20060102"); err != nil {
 						errorChan <- err
 						return
 					}
 				}
 				if o.RollOverSizeBytes <= int64(o.BufferOutput.buffer.Len()) {
-					log.Info("FILEOUTPUT ROLLOVER DUE TO BUFFER SIZE")
+					log.Debugf("FILEOUTPUT ROLLOVER DUE TO BUFFER SIZE")
 					if _, err := o.rollOverFile("20060102"); err != nil {
 						errorChan <- err
 						return
@@ -142,7 +143,7 @@ func (o *FileOutput) Go(messages <-chan map[string]interface{}, errorChan chan<-
 				o.flushOutput(false)
 
 			case cmsg := <-controlchan:
-				log.Infof("Fileoutput got %s over controlchan", cmsg)
+				log.Debugf("Fileoutput got %s over controlchan", cmsg)
 				switch cmsg {
 				case syscall.SIGHUP:
 					// reopen file
@@ -153,7 +154,7 @@ func (o *FileOutput) Go(messages <-chan map[string]interface{}, errorChan chan<-
 					}
 				case syscall.SIGTERM, syscall.SIGINT:
 					// handle exit gracefully
-					log.Info("Received a signal to terminate. Exiting gracefully")
+					log.Info("File Handler Received a signal to terminate. Exiting gracefully")
 					return
 				}
 			}
