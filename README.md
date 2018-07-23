@@ -7,13 +7,14 @@ events (both watchlist/feed hits as well as raw endpoint events, if configured) 
 The events can be saved to a file, delivered to a network service or archived automatically to an Amazon AWS S3 bucket.
 These events can be consumed by any external system that accepts JSON or LEEF, including Splunk and IBM QRadar.
 
-The list of events to collect is configurable.
-By default all feed and watchlist hits, alerts, binary notifications, and raw sensor events are exported into JSON.  The
-configuration file for the connector is stored in `/etc/cb/integrations/event-forwarder/cb-event-forwarder.conf`.
+##Configuration 
 
-The 4.0 Cb Event Forwarder has a three part processing pipeline:
+The 4.0 Cb Response Event Forwarder has a three part processing pipeline which is specified:
+in YAML format - with two crucicial parts - input and output.
 
 1) input - this section defines a number of consumers each reading from a specific CbR server messaging bus
+The list of events to collect is configurable.
+By default all feed and watchlist hits, alerts, binary notifications, and raw sensor events are exported into JSON.  The
 ```
 input: 
     cbserver1:
@@ -75,6 +76,7 @@ callbacks (currently just report information)
 ```
 post_processing:
     tls: 
+        #slightly different than other TLS stanzas found in input/output
         verify: false # defaults to true
         tls_12_only: false # defaults to true 
         client_cert: client.cert
@@ -114,6 +116,46 @@ output:
             type: template 
             template: "{{YamlFormat .}}"
 ```
+## Supported Output Types in 4.0
+The 4.0.0 CbR event-forwarder supports the same output options as 3.X:
+Each output must provide path/connection information, other configuration options
+specific to that output type and a format (like the old `output_format`) like so:
+
+output formats
+```
+format: 
+    type: json # leef, cef, template are the possible options
+```
+output options
+```
+file: 
+    path: path/to/your/desiredoutput.type
+    format:
+        type: json
+http:
+    destination: https://myserver:51337
+    # overide the default template ... http_post_template: 
+    #upload_empty_files: false    
+    #bundle_size_max: "50000000"
+    #bundle_send_timeout: "500"
+    #comma_seperate_events: false 
+    # defaults to false 
+    #headers:
+    #   header: headervalue
+    tls:
+        #tls options
+    format:
+        type: json
+socket:
+   connection: tpc://host-or-ip:port 
+   format: 
+        type: json
+splunk:
+syslog:
+    connection: tcp://host-or-ip:port 
+
+```
+
 ## Support
 
 The pre-built RPM is supported via our [User eXchange (Jive)](https://community.carbonblack.com/community/developer-relations) 
@@ -305,7 +347,6 @@ output from the JSON status is shown below:
   ]
 }
 ```
-
 ## Building from source
 
 It is recommended to use the latest avialable golang toolchain for your environment
