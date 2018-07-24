@@ -10,18 +10,18 @@ import (
 	"errors"
 	"expvar"
 	"fmt"
-	"github.com/carbonblack/cb-event-forwarder/internal/jsonmessageprocessor"
-	"github.com/carbonblack/cb-event-forwarder/internal/pbmessageprocessor"
-	"github.com/carbonblack/cb-event-forwarder/internal/sensor_events"
-	log "github.com/sirupsen/logrus"
-	"github.com/streadway/amqp"
-	"github.com/vaughan0/go-ini"
 	"io/ioutil"
 	"path"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/carbonblack/cb-event-forwarder/internal/messageprocessor"
+	"github.com/carbonblack/cb-event-forwarder/internal/sensor_events"
+	log "github.com/sirupsen/logrus"
+	"github.com/streadway/amqp"
+	"github.com/vaughan0/go-ini"
 )
 
 /*
@@ -38,7 +38,7 @@ func reportBundleDetails(routingKey string, body []byte, headers amqp.Table, deb
 	log.Errorf("Error while processing message through routing key %s:", routingKey)
 
 	var env *sensor_events.CbEnvironmentMsg
-	env, err := pbmessageprocessor.CreateEnvMessage(headers)
+	env, err := messageprocessor.CreateEnvMessage(headers)
 	if err != nil {
 		log.Errorf("  Message was received from sensor %d; hostname %s", env.Endpoint.GetSensorId(),
 			env.Endpoint.GetSensorHostName())
@@ -157,7 +157,7 @@ func GetAMQPTLSConfig(tls_ca_cert, tls_client_cert, tls_client_key string, tls_i
 	cfg := new(tls.Config)
 	caCert, err := ioutil.ReadFile(tls_ca_cert)
 	if err != nil {
-		log.Warnf("Error building consumer AMQPS tls config: %v",err)
+		log.Warnf("Error building consumer AMQPS tls config: %v", err)
 		return nil, err
 	}
 	caCertPool := x509.NewCertPool()
@@ -166,7 +166,7 @@ func GetAMQPTLSConfig(tls_ca_cert, tls_client_cert, tls_client_key string, tls_i
 
 	cert, err := tls.LoadX509KeyPair(tls_client_cert, tls_client_key)
 	if err != nil {
-		log.Warnf("Error building consumer AMQPS tls config: %v",err)
+		log.Warnf("Error building consumer AMQPS tls config: %v", err)
 		return nil, err
 	}
 	cfg.Certificates = []tls.Certificate{cert}
@@ -227,7 +227,7 @@ func NewConsumerFromConf(outputMessageFunc func(map[string]interface{}) error, s
 	if temp, ok := consumerCfg["rabbit_mq_password"]; ok {
 		amqpPassword = temp.(string)
 	} else { //load rabbit creds from (local) disk
-		 // TODO: make this only happen for 1 input entry , or something along those lines to prevent confusion ?
+		// TODO: make this only happen for 1 input entry , or something along those lines to prevent confusion ?
 		var err error = nil
 		amqpUsername, amqpPassword, err = GetLocalRabbitMQCredentials()
 		if err != nil {
@@ -296,7 +296,7 @@ func NewConsumerFromConf(outputMessageFunc func(map[string]interface{}) error, s
 				"ingress.event.processblock",
 				"ingress.event.emetmitigation",
 			},
-			"events_binary_observed": [] string {
+			"events_binary_observed": []string{
 				"binaryinfo.#",
 			},
 			"events_binary_upload": []string{
@@ -309,11 +309,11 @@ func NewConsumerFromConf(outputMessageFunc func(map[string]interface{}) error, s
 	}
 
 	for _, names := range eventMap {
-		if ns, ok :=  names.([]string); ok {
+		if ns, ok := names.([]string); ok {
 			for _, name := range ns {
 				eventNames = append(eventNames, name)
 			}
-		} else if ns, ok :=  names.([]interface{}); ok {
+		} else if ns, ok := names.([]interface{}); ok {
 			for _, name := range ns {
 				eventNames = append(eventNames, name.(string))
 			}
@@ -342,8 +342,8 @@ type Consumer struct {
 	CbServerName              string
 	CbServerURL               string
 	PerformFeedPostprocessing bool
-	Jsmp                      jsonmessageprocessor.JsonMessageProcessor
-	Pbmp                      pbmessageprocessor.PbMessageProcessor
+	Jsmp                      *messageprocessor.JsonMessageProcessor
+	Pbmp                      *messageprocessor.PbMessageProcessor
 	status                    ConsumerStatus
 	wg                        sync.WaitGroup
 	OutputMessageFunc         func(msg map[string]interface{}) error
@@ -386,8 +386,6 @@ func NewConsumer(wg sync.WaitGroup, outputMessageFunc func(map[string]interface{
 	for _, rk := range routingKeys {
 		eventMap[rk] = true
 	}
-	pbmp := pbmessageprocessor.PbMessageProcessor{EventMap: eventMap}
-	c.Pbmp = pbmp
 
 	return c, nil
 }
@@ -434,7 +432,7 @@ func (c *Consumer) Connect() error {
 		if err != nil {
 			return err
 		}
-		log.Infof(" Subscribed to bulk raw sensor event exchange on %s",c.CbServerName)
+		log.Infof(" Subscribed to bulk raw sensor event exchange on %s", c.CbServerName)
 	}
 
 	for _, key := range c.RoutingKeys {
@@ -442,7 +440,7 @@ func (c *Consumer) Connect() error {
 		if err != nil {
 			return err
 		}
-		log.Infof("Subscribed to %s on %s", key,c.CbServerName)
+		log.Infof("Subscribed to %s on %s", key, c.CbServerName)
 	}
 
 	deliveries, err := c.Channel.Consume(

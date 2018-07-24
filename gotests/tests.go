@@ -2,8 +2,7 @@ package tests
 
 import (
 	"github.com/carbonblack/cb-event-forwarder/internal/cbapi"
-	"github.com/carbonblack/cb-event-forwarder/internal/jsonmessageprocessor"
-	"github.com/carbonblack/cb-event-forwarder/internal/pbmessageprocessor"
+	"github.com/carbonblack/cb-event-forwarder/internal/messageprocessor"
 )
 
 //var configHTTPTemplate *template.Template = template.Must(template.New("testtemplateconfig").Parse(
@@ -11,7 +10,7 @@ import (
 //var config conf.Configuration = conf.Configuration{UploadEmptyFiles: false, BundleSizeMax: 1024 * 1024 * 1024, BundleSendTimeout: time.Duration(30) * time.Second, CbServerURL: "https://cbtests/", HTTPPostTemplate: configHTTPTemplate, DebugStore: ".", DebugFlag: true, EventMap: make(map[string]bool)}
 
 var cbapihandler cbapi.CbAPIHandler = cbapi.CbAPIHandler{}
-var jsmp jsonmessageprocessor.JsonMessageProcessor = jsonmessageprocessor.JsonMessageProcessor{}
+var jsmp messageprocessor.JsonMessageProcessor = messageprocessor.JsonMessageProcessor{}
 var eventMap map[string]interface{} = map[string]interface{}{
 	"ingress.event.process":        true,
 	"ingress.event.procstart":      true,
@@ -31,4 +30,4 @@ var eventMap map[string]interface{} = map[string]interface{}{
 	"binarystore.#":                true,
 	"events.partition.#":           true,
 }
-var pbmp pbmessageprocessor.PbMessageProcessor = pbmessageprocessor.PbMessageProcessor{EventMap: eventMap}
+var pbmp messageprocessor.PbMessageProcessor = messageprocessor.PbMessageProcessor{EventMap: eventMap}

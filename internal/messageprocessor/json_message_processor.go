@@ -1,33 +1,59 @@
-package jsonmessageprocessor
+package messageprocessor
 
 import (
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/carbonblack/cb-event-forwarder/internal/cbapi"
-	"github.com/carbonblack/cb-event-forwarder/internal/deepcopy"
-	"github.com/carbonblack/cb-event-forwarder/internal/util"
-	log "github.com/sirupsen/logrus"
 	"net/url"
 	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/carbonblack/cb-event-forwarder/internal/cbapi"
+	"github.com/carbonblack/cb-event-forwarder/internal/deepcopy"
+	"github.com/carbonblack/cb-event-forwarder/internal/util"
+	log "github.com/sirupsen/logrus"
 )
 
-type JsonMessageProcessor struct {
-	DebugFlag   bool
-	DebugStore  string
-	CbServerURL string
-	EventMap    map[string]interface{}
-	CbAPI       *cbapi.CbAPIHandler
+func NewJSONProcessor(newConfig Config) *JsonMessageProcessor {
+	jmp := new(JsonMessageProcessor)
+	jmp.DebugFlag = newConfig.DebugFlag
+	jmp.DebugStore = newConfig.DebugStore
+	jmp.EventMap = deepcopy.Iface(newConfig).(map[string]interface{})
+	jmp.CbServerURL = newConfig.CbServerURL
+	jmp.CbAPI = newConfig.CbAPI
+
+	// create message handlers
+	// jmp.messageHandlers["watchlist.hit.process"] = ProcessWatchlist
+
+	return jmp
 }
+
+type JsonMessageProcessor struct {
+	DebugFlag       bool
+	DebugStore      string
+	CbServerURL     string
+	EventMap        map[string]interface{}
+	CbAPI           *cbapi.CbAPIHandler
+	messageHandlers map[string]JSONMessageHandlerFunc
+}
+
+type JSONMessageHandlerFunc func(inmsg, outmsg map[string]interface{}) error
+
+type JSONMessageHandlers map[string]JSONMessageHandlerFunc
+
+var messageHandlers = make(JSONMessageHandlers)
 
 var feedParserRegex = regexp.MustCompile(`^feed\.(\d+)\.(.*)$`)
 
-func parseFullGUID(v string) (string, uint64, error) {
+// Register a handler function for a particular message type (`feed.xxx`, etc)
+func RegisterJSONHandler(messageType string, handler JSONMessageHandlerFunc) {
+	messageHandlers[messageType] = handler
+}
 
+func parseFullGUID(v string) (string, uint64, error) {
 	var segmentNumber uint64
 	var err error
 
@@ -81,9 +107,9 @@ func parseQueryString(encodedQuery map[string]string) (queryIndex string, parsed
 	parsedQuery = queryArray[0]
 	return
 }
-func handleKeyValues(msg map[string]interface{}) {
 
-	var alliance_data_map map[string]map[string]interface{} = make(map[string]map[string]interface{}, 0)
+func handleKeyValues(msg map[string]interface{}) {
+	var alliance_data_map = make(map[string]map[string]interface{}, 0)
 	for key, value := range msg {
 		switch {
 		case strings.Contains(key, "alliance_"):
@@ -109,9 +135,9 @@ func handleKeyValues(msg map[string]interface{}) {
 			}
 			parts := strings.Split(endpointstr, "|")
 			hostname := parts[0]
-			nodeID := parts[1]
+			sensorID := parts[1]
 			msg["hostname"] = hostname
-			msg["node_id"] = nodeID
+			msg["sensor_id"] = sensorID
 			delete(msg, "endpoint")
 		case key == "highlights_by_doc":
 			delete(msg, "highlights_by_doc")
@@ -174,6 +200,7 @@ func handleKeyValues(msg map[string]interface{}) {
 		msg["alliance_data"] = alliance_data_map
 	}
 }
+
 func (jsp *JsonMessageProcessor) fixupMessage(messageType string, msg map[string]interface{}) {
 	// go through each key and fix up as necessary
 
@@ -221,11 +248,11 @@ func (jsp *JsonMessageProcessor) fixupMessage(messageType string, msg map[string
 
 	// add deep links back into the Cb web UI if configured
 	if jsp.CbServerURL != "" {
-		AddLinksToMessage(messageType, jsp.CbServerURL, msg)
+		addLinksToMessage(messageType, jsp.CbServerURL, msg)
 	}
 }
 
-func AddLinksToMessage(messageType, serverURL string, msg map[string]interface{}) {
+func addLinksToMessage(messageType, serverURL string, msg map[string]interface{}) {
 	// add sensor links when applicable
 	if value, ok := msg["sensor_id"]; ok {
 		if value, ok := value.(json.Number); ok {
@@ -273,14 +300,6 @@ func fixupMessageType(routingKey string) string {
 	return routingKey
 }
 
-func PrettyPrintMap(msg map[string]interface{}) {
-	b, err := json.MarshalIndent(msg, "", "  ")
-	if err != nil {
-		fmt.Println("error:", err)
-	}
-	fmt.Print(string(b))
-}
-
 func (jsp *JsonMessageProcessor) ProcessJSONMessage(msg map[string]interface{}, routingKey string) ([]map[string]interface{}, error) {
 	msg["type"] = fixupMessageType(routingKey)
 	jsp.fixupMessage(routingKey, msg)
@@ -315,7 +334,8 @@ func (jsp *JsonMessageProcessor) ProcessJSONMessage(msg map[string]interface{}, 
 }
 
 /*
- * Used to perform postprocessing on messages.  For exmaple, for feed hits we need to grab the report_title.
+ * PostprocessJSONMessage performs postprocessing on feed/watchlist/alert messages.
+ * For exmaple, for feed hits we need to grab the report_title.
  * To do this we must query the Cb Response Server's REST API to get the report_title.  NOTE: In order to do this
  * functionality we need the Cb Response Server URL and API Token set within the config.
  */
@@ -365,21 +385,6 @@ func (jsp *JsonMessageProcessor) PostprocessJSONMessage(msg map[string]interface
 		}
 	}
 	return msg
-}
-
-func MarshalJSON(msgs []map[string]interface{}) (string, error) {
-	var ret string
-
-	for _, msg := range msgs {
-		//msg["cb_server"] = "cbserver"
-		marshaled, err := json.Marshal(msg)
-		if err != nil {
-			return "", err
-		}
-		ret += string(marshaled) + "\n"
-	}
-
-	return ret, nil
 }
 
 func (jsp *JsonMessageProcessor) ProcessJSON(routingKey string, indata []byte) ([]map[string]interface{}, error) {

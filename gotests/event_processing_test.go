@@ -1,12 +1,12 @@
 package tests
 
 import (
-	"github.com/carbonblack/cb-event-forwarder/internal/jsonmessageprocessor"
-	"github.com/streadway/amqp"
 	"io/ioutil"
 	"os"
 	"path"
 	"testing"
+
+	"github.com/streadway/amqp"
 )
 
 func BenchmarkProtobufEventProcessing(b *testing.B) {
@@ -45,7 +45,7 @@ type outputMessageFunc func([]map[string]interface{}) (string, error)
 
 func TestEventProcessing(t *testing.T) {
 	t.Log("Generating JSON output to go_output...")
-	processTestEvents(t, "go_output", jsonmessageprocessor.MarshalJSON)
+	processTestEvents(t, "go_output", MarshalJSON)
 }
 
 func processTestEvents(t *testing.T, outputDir string, outputFunc outputMessageFunc) {

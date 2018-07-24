@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 )
+
 //Output handler interface
 
 type OutputHandler interface {

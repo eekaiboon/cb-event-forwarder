@@ -21,9 +21,9 @@ CARBON BLACK 2018 - Zachary Estep - Using this code as the basis for a producer 
 
 import (
 	"github.com/carbonblack/cb-event-forwarder/internal/encoder"
-	"github.com/carbonblack/cb-event-forwarder/internal/jsonmessageprocessor"
+	"github.com/carbonblack/cb-event-forwarder/internal/messageprocessor"
 	"github.com/carbonblack/cb-event-forwarder/internal/output"
-	"github.com/carbonblack/cb-event-forwarder/internal/pbmessageprocessor"
+	"github.com/carbonblack/cb-event-forwarder/internal/messageprocessor"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	log "github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/mock"
@@ -35,7 +35,7 @@ import (
 	"testing"
 )
 
-var jsmp jsonmessageprocessor.JsonMessageProcessor = jsonmessageprocessor.JsonMessageProcessor{}
+var jsmp messageprocessor.JsonMessageProcessor = messageprocessor.JsonMessageProcessor{}
 var eventMap map[string]interface{} = map[string]interface{}{
 	"watchlist.#":                  true,
 	"feed.#":                       true,
@@ -58,7 +58,7 @@ var eventMap map[string]interface{} = map[string]interface{}{
 	"binarystore.#":                true,
 	"events.partition.#":           true,
 }
-var pbmp pbmessageprocessor.PbMessageProcessor = pbmessageprocessor.PbMessageProcessor{EventMap: eventMap}
+var pbmp messageprocessor.PbMessageProcessor = messageprocessor.PbMessageProcessor{EventMap: eventMap}
 
 type MockedProducer struct {
 	mock.Mock
@@ -132,7 +132,7 @@ func TestKafkaOutput(t *testing.T) {
 	testEncoder := encoder.NewJSONEncoder()
 	var outputHandler output.OutputHandler = &KafkaOutput{Producer: mockProducer, Encoder: &testEncoder, deliveryChannel: make(chan kafka.Event)}
 
-	processTestEventsWithRealHandler(t, outputDir, jsonmessageprocessor.MarshalJSON, outputHandler)
+	processTestEventsWithRealHandler(t, outputDir, MarshalJSON, outputHandler)
 
 }
 

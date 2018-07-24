@@ -2,7 +2,7 @@ package tests
 
 import (
 	"encoding/json"
-	"github.com/carbonblack/cb-event-forwarder/internal/pbmessageprocessor"
+	"github.com/carbonblack/cb-event-forwarder/internal/messageprocessor"
 	"io/ioutil"
 	"os"
 	"path"
@@ -81,7 +81,7 @@ func TestPbProcessing(t *testing.T) {
 				"binarystore.#":                true,
 				"events.partition.#":           true,
 			}
-			pbmp := pbmessageprocessor.PbMessageProcessor{EventMap: eventMap}
+			pbmp := messageprocessor.PbMessageProcessor{EventMap: eventMap}
 			msgs, err := pbmp.ProcessProtobuf(routingKey, d)
 			if err == nil && len(msgs) > 0 {
 				//t.Logf("%s",msgs)

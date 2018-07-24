@@ -42,7 +42,7 @@ func main() {
 	}
 
 	exportedVersion := expvar.NewString("version")
-    log.Infof("Debug is %s",*debug)
+	log.Infof("Debug is %s", *debug)
 	if *debug {
 		exportedVersion.Set(version + " (debugging on)")
 		log.Debugf("*** Debugging enabled: messages may be sent via http://%s:%d/debug/sendmessage/<cbefinputname> ***",
@@ -106,7 +106,7 @@ func main() {
 
 	log.SetLevel(log.InfoLevel)
 	if *debug {
-        log.Infof("Setting log level to debug")
+		log.Infof("Setting log level to debug")
 		log.SetLevel(log.DebugLevel)
 		http.HandleFunc(fmt.Sprintf("/debug/sendmessage"), func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == "POST" {

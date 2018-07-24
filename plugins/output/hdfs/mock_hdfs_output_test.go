@@ -21,9 +21,8 @@ CARBON BLACK 2018 - Zachary Estep - Using this code as the basis for a producer 
 
 import (
 	"github.com/carbonblack/cb-event-forwarder/internal/encoder"
-	"github.com/carbonblack/cb-event-forwarder/internal/jsonmessageprocessor"
+	"github.com/carbonblack/cb-event-forwarder/internal/messageprocessor"
 	"github.com/carbonblack/cb-event-forwarder/internal/output"
-	"github.com/carbonblack/cb-event-forwarder/internal/pbmessageprocessor"
 	"github.com/colinmarc/hdfs"
 	"github.com/stretchr/testify/mock"
 	"io/ioutil"
@@ -34,7 +33,7 @@ import (
 	"testing"
 )
 
-var jsmp jsonmessageprocessor.JsonMessageProcessor = jsonmessageprocessor.JsonMessageProcessor{}
+var jsmp messageprocessor.JsonMessageProcessor = messageprocessor.JsonMessageProcessor{}
 var eventMap map[string]interface{} = map[string]interface{}{
 	"ingress.event.process":        true,
 	"ingress.event.procstart":      true,
@@ -54,7 +53,7 @@ var eventMap map[string]interface{} = map[string]interface{}{
 	"binarystore.#":                true,
 	"events.partition.#":           true,
 }
-var pbmp pbmessageprocessor.PbMessageProcessor = pbmessageprocessor.PbMessageProcessor{EventMap: eventMap}
+var pbmp messageprocessor.PbMessageProcessor = messageprocessor.PbMessageProcessor{EventMap: eventMap}
 
 type MockedHDFSClient struct {
 	mock.Mock
@@ -84,7 +83,7 @@ func TestHDFSOutput(t *testing.T) {
 	mockHdfs.outdir = outputDir
 	testEncoder := encoder.NewJSONEncoder()
 	outputHandler := HdfsOutput{HDFSClient: mockHdfs, Encoder: &testEncoder}
-	processTestEventsWithRealHandler(t, outputDir, jsonmessageprocessor.MarshalJSON, &outputHandler)
+	processTestEventsWithRealHandler(t, outputDir, MarshalJSON, &outputHandler)
 
 }
 

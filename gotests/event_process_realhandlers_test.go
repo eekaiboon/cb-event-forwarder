@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/carbonblack/cb-event-forwarder/internal/encoder"
-	"github.com/carbonblack/cb-event-forwarder/internal/jsonmessageprocessor"
+	"github.com/carbonblack/cb-event-forwarder/internal/messageprocessor"
 	"github.com/carbonblack/cb-event-forwarder/internal/output"
 	"io"
 	"io/ioutil"
@@ -23,7 +23,7 @@ func TestFileOutput(t *testing.T) {
 	os.MkdirAll(outputDir, 0755)
 	testEncoder := encoder.NewJSONEncoder()
 	outputHandler := output.NewFileOutputHandler(outputDir+"file.out", 50000000, time.Duration(50000)*time.Second, &testEncoder)
-	processTestEventsWithRealHandler(t, outputDir, jsonmessageprocessor.MarshalJSON, &outputHandler, nil, nil)
+	processTestEventsWithRealHandler(t, outputDir, MarshalJSON, &outputHandler, nil, nil)
 }
 
 func TestNetOutputTCP(t *testing.T) {
@@ -82,7 +82,7 @@ func TestNetOutputTCP(t *testing.T) {
 		stopchan <- struct{}{}
 	}
 
-	processTestEventsWithRealHandler(t, outputDir, jsonmessageprocessor.MarshalJSON, &outputHandler, &background, &shutdown)
+	processTestEventsWithRealHandler(t, outputDir, MarshalJSON, &outputHandler, &background, &shutdown)
 }
 
 type handler struct {
@@ -141,7 +141,7 @@ func TestHttpOutput(t *testing.T) {
 		h.outf.Close()
 	}
 
-	processTestEventsWithRealHandler(t, outputDir, jsonmessageprocessor.MarshalJSON, &outputHandler, &background, &shutdown)
+	processTestEventsWithRealHandler(t, outputDir, MarshalJSON, &outputHandler, &background, &shutdown)
 }
 
 func TestS3Output(t *testing.T) {
@@ -160,7 +160,7 @@ func TestS3Output(t *testing.T) {
 	s3behavior := output.S3Behavior{Out: mocks3}
 	outputHandler, _ := output.NewBundledOutput(".", 500000, 300, false, true, "/tmp", &s3behavior, &testEncoder)
 	t.Logf("Starting s3output test")
-	processTestEventsWithRealHandler(t, outputDir, jsonmessageprocessor.MarshalJSON, &outputHandler, nil, nil)
+	processTestEventsWithRealHandler(t, outputDir, MarshalJSON, &outputHandler, nil, nil)
 }
 
 func processTestEventsWithRealHandler(t *testing.T, outputDir string, outputFunc outputMessageFunc, oh output.OutputHandler, backgroundfunc *func(), shutdown *func()) {

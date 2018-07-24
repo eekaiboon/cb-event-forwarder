@@ -1,4 +1,4 @@
-package pbmessageprocessor
+package messageprocessor
 
 import (
 	"archive/zip"
@@ -6,11 +6,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/carbonblack/cb-event-forwarder/internal/sensor_events"
-	"github.com/carbonblack/cb-event-forwarder/internal/util"
-	"github.com/golang/protobuf/proto"
-	log "github.com/sirupsen/logrus"
-	"github.com/streadway/amqp"
 	"io/ioutil"
 	"net"
 	"os"
@@ -18,6 +13,13 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/carbonblack/cb-event-forwarder/internal/deepcopy"
+	"github.com/carbonblack/cb-event-forwarder/internal/sensor_events"
+	"github.com/carbonblack/cb-event-forwarder/internal/util"
+	"github.com/golang/protobuf/proto"
+	log "github.com/sirupsen/logrus"
+	"github.com/streadway/amqp"
 )
 
 type PbMessageProcessor struct {
@@ -25,6 +27,16 @@ type PbMessageProcessor struct {
 	DebugStore  string
 	CbServerURL string
 	EventMap    map[string]interface{}
+}
+
+func NewProtobufProcessor(newConfig Config) *PbMessageProcessor {
+	pmp := new(PbMessageProcessor)
+	pmp.DebugFlag = newConfig.DebugFlag
+	pmp.DebugStore = newConfig.DebugStore
+	pmp.EventMap = deepcopy.Iface(newConfig).(map[string]interface{})
+	pmp.CbServerURL = newConfig.CbServerURL
+
+	return pmp
 }
 
 func GetProcessGUID(m *sensor_events.CbEventMsg) string {

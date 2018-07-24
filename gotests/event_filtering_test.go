@@ -3,12 +3,12 @@ package tests
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/carbonblack/cb-event-forwarder/internal/filter"
-	"github.com/carbonblack/cb-event-forwarder/internal/jsonmessageprocessor"
 	"io/ioutil"
 	"os"
 	"path"
 	"testing"
+
+	"github.com/carbonblack/cb-event-forwarder/internal/filter"
 )
 
 var testFilter *filter.Filter = filter.NewFilter("{{if (eq .type \"alert.watchlist.hit.query.binary\")}}KEEP{{else}}DROP{{end}}", "", "")
@@ -144,7 +144,7 @@ func filterTestEvents(t *testing.T, outputDir string, filterFunc FilterFunc) {
 
 				msgs = filterFunc(msgs)
 				if msgs != nil && len(msgs) > 0 {
-					out, err := jsonmessageprocessor.MarshalJSON(msgs)
+					out, err := MarshalJSON(msgs)
 					if err != nil {
 						t.Errorf("Error serializing %s: %s", path.Join(routingDir, fn.Name()), err)
 						continue

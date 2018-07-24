@@ -4,17 +4,17 @@ import (
 	"encoding/json"
 	"expvar"
 	"fmt"
-	"github.com/carbonblack/cb-event-forwarder/internal/cbapi"
-	"github.com/carbonblack/cb-event-forwarder/internal/consumer"
-	"github.com/carbonblack/cb-event-forwarder/internal/filter"
-	"github.com/carbonblack/cb-event-forwarder/internal/jsonmessageprocessor"
-	"github.com/carbonblack/cb-event-forwarder/internal/output"
-	"github.com/carbonblack/cb-event-forwarder/internal/pbmessageprocessor"
-	log "github.com/sirupsen/logrus"
 	"os"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/carbonblack/cb-event-forwarder/internal/cbapi"
+	"github.com/carbonblack/cb-event-forwarder/internal/consumer"
+	"github.com/carbonblack/cb-event-forwarder/internal/filter"
+	"github.com/carbonblack/cb-event-forwarder/internal/messageprocessor"
+	"github.com/carbonblack/cb-event-forwarder/internal/output"
+	log "github.com/sirupsen/logrus"
 )
 
 type Status struct {
@@ -226,7 +226,7 @@ func GetCbEventForwarderFromCfg(config map[string]interface{}) CbEventForwarder 
 	outputcontrolchannels := make([]*chan os.Signal, len(outputconfigs))
 	i := 0
 	for i < len(outputconfigs) {
-		res[i] = make(chan map[string]interface{},100)
+		res[i] = make(chan map[string]interface{}, 100)
 		controlchan := make(chan os.Signal, 2)
 		outputcontrolchannels[i] = &controlchan
 		i++
@@ -281,23 +281,26 @@ func GetCbEventForwarderFromCfg(config map[string]interface{}) CbEventForwarder 
 			cbServerURL = t.(string)
 		}
 
-		var cbapihandler * cbapi.CbAPIHandler = nil
+		var cbapihandler *cbapi.CbAPIHandler = nil
 
-		if postprocess, ok := consumerConfMap["post_processing"] ; ok {
+		if postprocess, ok := consumerConfMap["post_processing"]; ok {
 			if ppmap, ok := postprocess.(map[interface{}]interface{}); ok {
-				cbapihandler_temp, err := cbapi.CbAPIHandlerFromCfg(ppmap,cbServerURL)
+				cbapihandler_temp, err := cbapi.CbAPIHandlerFromCfg(ppmap, cbServerURL)
 				if err != nil {
 					log.Panicf("Error getting cbapihandler from configuration: %v", err)
 				} else {
 					cbapihandler = cbapihandler_temp
 				}
-			} else  {
+			} else {
 				log.Panicf("Error getting cbapihandler from configuration: %v", err)
 			}
 		}
 
-		myjsmp := jsonmessageprocessor.JsonMessageProcessor{DebugFlag: debugFlag, DebugStore: debugStore, CbAPI: cbapihandler, CbServerURL: cbServerURL}
-		mypbmp := pbmessageprocessor.PbMessageProcessor{DebugFlag: debugFlag, DebugStore: debugStore, CbServerURL: cbServerURL}
+		messageConfig := messageprocessor.Config{DebugFlag: debugFlag, DebugStore: debugStore, CbAPI: cbapihandler, CbServerURL: cbServerURL}
+
+		myjsmp := messageprocessor.NewJSONProcessor(messageConfig)
+		mypbmp := messageprocessor.NewProtobufProcessor(messageConfig)
+
 		c, err := consumer.NewConsumerFromConf(cbef.OutputMessage, cbServerName, cbServerName, consumerConfMap, debugFlag, debugStore, cbef.ConsumerWaitGroup)
 		if err != nil {
 			log.Panicf("Error consturcting consumer from configuration: %v", err)
@@ -313,6 +316,7 @@ func GetCbEventForwarderFromCfg(config map[string]interface{}) CbEventForwarder 
 	}
 	return cbef
 }
+
 // The event forwarder GO
 //  The sigs channel should be hooked up to system or similar
 // This controls the event forwarder, and should be used to cause it to gracefully exit/clear output buffers
