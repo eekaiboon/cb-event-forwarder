@@ -323,11 +323,12 @@ func copyProcessMetadata(subdoc map[string]interface{}, outmsg map[string]interf
 	outmsg["process_pid"] = getNumber(subdoc, "process_pid", json.Number("0"))
 	outmsg["username"] = getString(subdoc, "username", "")
 	outmsg["path"] = getString(subdoc, "path", "")
+	outmsg["last_update"] = getString(subdoc, "last_update", "")
+	outmsg["start"] = getString(subdoc, "start", "")
 }
 
 func copyParentMetadata(subdoc map[string]interface{}, outmsg map[string]interface{}) {
 	// parent process metadata
-	outmsg["parent_md5"] = strings.ToUpper(getString(subdoc, "parent_md5", ""))
 	outmsg["parent_name"] = getString(subdoc, "parent_name", "")
 	outmsg["parent_guid"] = getString(subdoc, "parent_unique_id", "")
 	outmsg["parent_pid"] = getNumber(subdoc, "parent_pid", json.Number("0"))
@@ -387,6 +388,50 @@ func (jsp *JsonMessageProcessor) watchlistHitProcess(inmsg map[string]interface{
 	return outmsgs, nil
 }
 
+func (jsp *JsonMessageProcessor) watchlistStorageHitProcess(inmsg map[string]interface{}) ([]map[string]interface{}, error) {
+	// collect fields that are used across all the docs
+	watchlistName := getString(inmsg, "watchlist_name", "")
+	watchlistID := getNumber(inmsg, "watchlist_id", json.Number("0"))
+	cbVersion := getString(inmsg, "cb_version", "")
+	eventTimestamp := getNumber(inmsg, "event_timestamp", json.Number("0"))
+
+	outmsgs := make([]map[string]interface{}, 0, 1)
+
+	// explode watchlist/feed hit messages that include a "docs" array
+	if val, ok := inmsg["docs"]; ok {
+		if subdocs, ok := val.([]interface{}); ok {
+			for _, submsg := range subdocs {
+				if subdoc, ok := submsg.(map[string]interface{}); ok {
+					outmsg := make(map[string]interface{})
+
+					// message metadata
+					outmsg["type"] = "watchlist.storage.hit.process"
+					outmsg["schema_version"] = 2
+
+					// watchlist metadata
+					outmsg["watchlist_name"] = watchlistName
+					outmsg["watchlist_id"] = watchlistID
+
+					// event metadata
+					outmsg["cb_version"] = cbVersion
+					outmsg["event_timestamp"] = eventTimestamp
+
+					// sensor metadata not available in .storage.hit events
+
+					copyProcessMetadata(subdoc, outmsg)
+					copyParentMetadata(subdoc, outmsg)
+					copyEventCounts(subdoc, outmsg)
+
+					// append the message to our output
+					outmsgs = append(outmsgs, outmsg)
+				}
+			}
+		}
+	}
+
+	return outmsgs, nil
+}
+
 // ProcessJSON will take an incoming message and create a set of outgoing key/value
 // pairs ready for the appropriate output function
 func (jsp *JsonMessageProcessor) ProcessJSON(routingKey string, indata []byte) ([]map[string]interface{}, error) {
@@ -415,6 +460,7 @@ func NewJSONProcessor(newConfig Config) *JsonMessageProcessor {
 	// create message handlers
 	jmp.messageHandlers = make(map[string]JSONMessageHandlerFunc)
 	jmp.messageHandlers["watchlist.hit.process"] = jmp.watchlistHitProcess
+	jmp.messageHandlers["watchlist.storage.hit.process"] = jmp.watchlistStorageHitProcess
 
 	return jmp
 }
