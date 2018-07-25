@@ -9,9 +9,9 @@ import (
 //`{"filename": "{{.FileName}}", "service": "carbonblack", "alerts":[{{range .Events}}{{.EventText}}{{end}}]}`))
 //var config conf.Configuration = conf.Configuration{UploadEmptyFiles: false, BundleSizeMax: 1024 * 1024 * 1024, BundleSendTimeout: time.Duration(30) * time.Second, CbServerURL: "https://cbtests/", HTTPPostTemplate: configHTTPTemplate, DebugStore: ".", DebugFlag: true, EventMap: make(map[string]bool)}
 
-var cbapihandler cbapi.CbAPIHandler = cbapi.CbAPIHandler{}
-var jsmp messageprocessor.JsonMessageProcessor = messageprocessor.JsonMessageProcessor{}
-var eventMap map[string]interface{} = map[string]interface{}{
+var cbapihandler = cbapi.CbAPIHandler{}
+var jsmp *messageprocessor.JsonMessageProcessor
+var protobufEventMap = map[string]bool{
 	"ingress.event.process":        true,
 	"ingress.event.procstart":      true,
 	"ingress.event.netconn":        true,
@@ -30,4 +30,18 @@ var eventMap map[string]interface{} = map[string]interface{}{
 	"binarystore.#":                true,
 	"events.partition.#":           true,
 }
-var pbmp messageprocessor.PbMessageProcessor = messageprocessor.PbMessageProcessor{EventMap: eventMap}
+var pbmp = messageprocessor.PbMessageProcessor{EventMap: protobufEventMap}
+
+var jsonEventMap = map[string]bool{
+	"watchlist.hit.process": true,
+}
+
+func init() {
+	jsmp = messageprocessor.NewJSONProcessor(messageprocessor.Config{
+		DebugFlag:   false,
+		DebugStore:  "/tmp",
+		CbServerURL: "https://localhost/",
+		CbAPI:       &cbapihandler,
+		EventMap:    jsonEventMap,
+	})
+}

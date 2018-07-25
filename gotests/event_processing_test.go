@@ -121,7 +121,7 @@ func processTestEvents(t *testing.T, outputDir string, outputFunc outputMessageF
 					t.Errorf("Error processing %s: %s", path.Join(routingDir, fn.Name()), err)
 					continue
 				}
-				if len(msgs[0]) == 0 {
+				if len(msgs) == 0 {
 					t.Errorf("got zero messages out of: %s/%s", routingDir, fn.Name())
 					continue
 				}

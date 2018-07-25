@@ -3,9 +3,6 @@ package tests
 import (
 	"context"
 	"fmt"
-	"github.com/carbonblack/cb-event-forwarder/internal/encoder"
-	"github.com/carbonblack/cb-event-forwarder/internal/messageprocessor"
-	"github.com/carbonblack/cb-event-forwarder/internal/output"
 	"io"
 	"io/ioutil"
 	"net"
@@ -16,6 +13,9 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/carbonblack/cb-event-forwarder/internal/encoder"
+	"github.com/carbonblack/cb-event-forwarder/internal/output"
 )
 
 func TestFileOutput(t *testing.T) {
@@ -249,7 +249,7 @@ func processTestEventsWithRealHandler(t *testing.T, outputDir string, outputFunc
 					t.Errorf("Error processing %s: %s", path.Join(routingDir, fn.Name()), err)
 					continue
 				}
-				if len(msgs[0]) == 0 {
+				if len(msgs) == 0 {
 					t.Errorf("got zero messages out of: %s/%s", routingDir, fn.Name())
 					continue
 				}

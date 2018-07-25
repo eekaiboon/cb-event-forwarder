@@ -2,11 +2,12 @@ package tests
 
 import (
 	"encoding/json"
-	"github.com/carbonblack/cb-event-forwarder/internal/messageprocessor"
 	"io/ioutil"
 	"os"
 	"path"
 	"testing"
+
+	"github.com/carbonblack/cb-event-forwarder/internal/messageprocessor"
 )
 
 func TestPbProcessing(t *testing.T) {
@@ -62,7 +63,7 @@ func TestPbProcessing(t *testing.T) {
 				t.Errorf("Could not read %s", path.Join(routingDir, fn.Name()))
 				continue
 			}
-			eventMap := map[string]interface{}{
+			eventMap := map[string]bool{
 				"ingress.event.process":        true,
 				"ingress.event.procstart":      true,
 				"ingress.event.netconn":        true,

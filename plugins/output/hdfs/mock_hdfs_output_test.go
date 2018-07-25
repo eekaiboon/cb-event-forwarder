@@ -20,17 +20,18 @@ CARBON BLACK 2018 - Zachary Estep - Using this code as the basis for a producer 
 */
 
 import (
-	"github.com/carbonblack/cb-event-forwarder/internal/encoder"
-	"github.com/carbonblack/cb-event-forwarder/internal/messageprocessor"
-	"github.com/carbonblack/cb-event-forwarder/internal/output"
-	"github.com/colinmarc/hdfs"
-	"github.com/stretchr/testify/mock"
 	"io/ioutil"
 	"os"
 	"path"
 	"sync"
 	"syscall"
 	"testing"
+
+	"github.com/carbonblack/cb-event-forwarder/internal/encoder"
+	"github.com/carbonblack/cb-event-forwarder/internal/messageprocessor"
+	"github.com/carbonblack/cb-event-forwarder/internal/output"
+	"github.com/colinmarc/hdfs"
+	"github.com/stretchr/testify/mock"
 )
 
 var jsmp messageprocessor.JsonMessageProcessor = messageprocessor.JsonMessageProcessor{}
@@ -166,7 +167,7 @@ func processTestEventsWithRealHandler(t *testing.T, outputDir string, outputFunc
 					t.Errorf("Error processing %s: %s", path.Join(routingDir, fn.Name()), err)
 					continue
 				}
-				if len(msgs[0]) == 0 {
+				if len(msgs) == 0 {
 					t.Errorf("got zero messages out of: %s/%s", routingDir, fn.Name())
 					continue
 				}

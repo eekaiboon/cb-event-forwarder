@@ -6,6 +6,6 @@ type Config struct {
 	DebugFlag   bool
 	DebugStore  string
 	CbServerURL string
-	EventMap    map[string]interface{}
+	EventMap    map[string]bool
 	CbAPI       *cbapi.CbAPIHandler
 }

@@ -3,15 +3,19 @@ package util
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
-	log "github.com/sirupsen/logrus"
-	"gopkg.in/h2non/filetype.v1"
 	"net"
 	"os"
 	"path"
 	"path/filepath"
 	"plugin"
+	"strconv"
 	"text/template"
+	"time"
+
+	log "github.com/sirupsen/logrus"
+	"gopkg.in/h2non/filetype.v1"
 )
 
 /*
@@ -162,4 +166,40 @@ func MoveFileToDebug(debugFlag bool, debugStore string, name string) {
 			log.Debugf("MoveFileToDebug mv error: %v", err)
 		}
 	}
+}
+
+// UnixTimeFromString converts an ISO8601 time string (for example 2018-07-23T18:26:37.843Z)
+// into a floating point value - number of seconds since Jan 1, 1970 GMT
+func UnixTimeFromString(s string) (float64, error) {
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return 0, err
+	}
+	return float64(t.UnixNano()) / 1000000000, nil
+}
+
+// ParseFullGUID parses a Cb Response GUID into a process ID and the segment number
+func ParseFullGUID(v string) (string, uint64, error) {
+	var segmentNumber uint64
+	var err error
+
+	segmentNumber = 1
+
+	switch {
+	case len(v) < 36:
+		return v, segmentNumber, errors.New("Truncated GUID")
+	case len(v) == 36:
+		return v, segmentNumber, nil
+	case len(v) == 45:
+		segmentNumber, err = strconv.ParseUint(v[37:], 16, 64)
+		if err != nil {
+			segmentNumber = 1
+		}
+	case len(v) == 49: // Cb Response versions 6.x and above
+		segmentNumber, err = strconv.ParseUint(v[37:], 16, 64)
+	default:
+		err = errors.New("Truncated GUID")
+	}
+
+	return v[:36], segmentNumber, err
 }

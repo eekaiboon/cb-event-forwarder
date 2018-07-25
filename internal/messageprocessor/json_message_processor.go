@@ -17,66 +17,18 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func NewJSONProcessor(newConfig Config) *JsonMessageProcessor {
-	jmp := new(JsonMessageProcessor)
-	jmp.DebugFlag = newConfig.DebugFlag
-	jmp.DebugStore = newConfig.DebugStore
-	jmp.EventMap = deepcopy.Iface(newConfig).(map[string]interface{})
-	jmp.CbServerURL = newConfig.CbServerURL
-	jmp.CbAPI = newConfig.CbAPI
-
-	// create message handlers
-	// jmp.messageHandlers["watchlist.hit.process"] = ProcessWatchlist
-
-	return jmp
-}
+type JSONMessageHandlerFunc func(inmsg map[string]interface{}) ([]map[string]interface{}, error)
 
 type JsonMessageProcessor struct {
 	DebugFlag       bool
 	DebugStore      string
 	CbServerURL     string
-	EventMap        map[string]interface{}
+	EventMap        map[string]bool
 	CbAPI           *cbapi.CbAPIHandler
 	messageHandlers map[string]JSONMessageHandlerFunc
 }
 
-type JSONMessageHandlerFunc func(inmsg, outmsg map[string]interface{}) error
-
-type JSONMessageHandlers map[string]JSONMessageHandlerFunc
-
-var messageHandlers = make(JSONMessageHandlers)
-
 var feedParserRegex = regexp.MustCompile(`^feed\.(\d+)\.(.*)$`)
-
-// Register a handler function for a particular message type (`feed.xxx`, etc)
-func RegisterJSONHandler(messageType string, handler JSONMessageHandlerFunc) {
-	messageHandlers[messageType] = handler
-}
-
-func parseFullGUID(v string) (string, uint64, error) {
-	var segmentNumber uint64
-	var err error
-
-	segmentNumber = 1
-
-	switch {
-	case len(v) < 36:
-		return v, segmentNumber, errors.New("Truncated GUID")
-	case len(v) == 36:
-		return v, segmentNumber, nil
-	case len(v) == 45:
-		segmentNumber, err = strconv.ParseUint(v[37:], 16, 64)
-		if err != nil {
-			segmentNumber = 1
-		}
-	case len(v) == 49: // Cb Response versions 6.x and above
-		segmentNumber, err = strconv.ParseUint(v[37:], 16, 64)
-	default:
-		err = errors.New("Truncated GUID")
-	}
-
-	return v[:36], segmentNumber, err
-}
 
 func parseQueryString(encodedQuery map[string]string) (queryIndex string, parsedQuery string, err error) {
 	err = nil
@@ -201,64 +153,17 @@ func handleKeyValues(msg map[string]interface{}) {
 	}
 }
 
-func (jsp *JsonMessageProcessor) fixupMessage(messageType string, msg map[string]interface{}) {
-	// go through each key and fix up as necessary
-
-	handleKeyValues(msg)
-
-	hasprocessGUID := false
-
-	// figure out the canonical process guid associated with this message
-	if !strings.HasPrefix(messageType, "alert.") {
-		if value, ok := msg["unique_id"]; ok {
-			if uniqueID, ok := value.(string); ok {
-				processGUID, segment, err := parseFullGUID(uniqueID)
-				if err == nil {
-					msg["process_guid"] = processGUID
-					msg["segment_id"] = fmt.Sprintf("%v", segment)
-					hasprocessGUID = true
-				}
-				delete(msg, "unique_id")
-			}
-		}
+func (jsp *JsonMessageProcessor) addLinksToMessage(msg map[string]interface{}) {
+	if jsp.CbServerURL == "" {
+		return
 	}
 
-	// fall back to process_id in the message
-	if !hasprocessGUID {
-		if value, ok := msg["process_id"]; ok {
-			if uniqueID, ok := value.(string); ok {
-				processGUID, segment, _ := parseFullGUID(uniqueID)
-				msg["process_guid"] = processGUID
-				msg["segment_id"] = fmt.Sprintf("%v", segment)
-				hasprocessGUID = true
-			}
-			delete(msg, "process_id")
-		}
-	}
-
-	// also deal with parent links
-	if value, ok := msg["parent_unique_id"]; ok {
-		if uniqueID, ok := value.(string); ok {
-			processGUID, segment, _ := parseFullGUID(uniqueID)
-			msg["parent_guid"] = processGUID
-			msg["parent_segment_id"] = fmt.Sprintf("%v", segment)
-		}
-		delete(msg, "parent_unique_id")
-	}
-
-	// add deep links back into the Cb web UI if configured
-	if jsp.CbServerURL != "" {
-		addLinksToMessage(messageType, jsp.CbServerURL, msg)
-	}
-}
-
-func addLinksToMessage(messageType, serverURL string, msg map[string]interface{}) {
 	// add sensor links when applicable
 	if value, ok := msg["sensor_id"]; ok {
 		if value, ok := value.(json.Number); ok {
 			hostID, err := strconv.ParseInt(value.String(), 10, 32)
 			if err == nil {
-				msg["link_sensor"] = fmt.Sprintf("%s#/host/%d", serverURL, hostID)
+				msg["link_sensor"] = fmt.Sprintf("%s#/host/%d", jsp.CbServerURL, hostID)
 			}
 		}
 	}
@@ -269,7 +174,7 @@ func addLinksToMessage(messageType, serverURL string, msg map[string]interface{}
 			if md5, ok := value.(string); ok {
 				if len(md5) == 32 {
 					keyName := "link_" + key
-					msg[keyName] = fmt.Sprintf("%s#/binary/%s", serverURL, msg[key])
+					msg[keyName] = fmt.Sprintf("%s#/binary/%s", jsp.CbServerURL, msg[key])
 				}
 			}
 		}
@@ -277,18 +182,14 @@ func addLinksToMessage(messageType, serverURL string, msg map[string]interface{}
 
 	// add process links
 	if processGUID, ok := msg["process_guid"]; ok {
-		if segmentID, ok := msg["segment_id"]; ok {
-			msg["link_process"] = fmt.Sprintf("%s#analyze/%v/%v", serverURL, processGUID, segmentID)
-		} else {
-			msg["link_process"] = fmt.Sprintf("%s#analyze/%v/%v", serverURL, processGUID, 1)
+		if processID, segmentID, err := util.ParseFullGUID(processGUID.(string)); err == nil {
+			msg["link_process"] = fmt.Sprintf("%s#analyze/%v/%v", jsp.CbServerURL, processID, segmentID)
 		}
 	}
 
 	if parentGUID, ok := msg["parent_guid"]; ok {
-		if segmentID, ok := msg["parent_segment_id"]; ok {
-			msg["link_parent"] = fmt.Sprintf("%s#analyze/%v/%v", serverURL, parentGUID, segmentID)
-		} else {
-			msg["link_parent"] = fmt.Sprintf("%s#analyze/%v/%v", serverURL, parentGUID, 1)
+		if parentID, segmentID, err := util.ParseFullGUID(parentGUID.(string)); err == nil {
+			msg["link_parent"] = fmt.Sprintf("%s#analyze/%v/%v", jsp.CbServerURL, parentID, segmentID)
 		}
 	}
 }
@@ -301,36 +202,19 @@ func fixupMessageType(routingKey string) string {
 }
 
 func (jsp *JsonMessageProcessor) ProcessJSONMessage(msg map[string]interface{}, routingKey string) ([]map[string]interface{}, error) {
-	msg["type"] = fixupMessageType(routingKey)
-	jsp.fixupMessage(routingKey, msg)
+	messageType := fixupMessageType(routingKey)
 
-	msgs := make([]map[string]interface{}, 0, 1)
+	if processfunc, ok := jsp.messageHandlers[messageType]; ok {
+		outmsgs, err := processfunc(msg)
 
-	// explode watchlist/feed hit messages that include a "docs" array
-	if val, ok := msg["docs"]; ok {
-		subdocs := deepcopy.Iface(val).([]interface{})
-		delete(msg, "docs")
-		for _, submsg := range subdocs {
-			submsg := submsg.(map[string]interface{})
-			newMsg := deepcopy.Iface(msg).(map[string]interface{})
-			//newSlice := make([]map[string]interface{}, 0, 1)
-			//newDoc := deepcopy.Iface(submsg).(map[string]interface{})
-			//jsp.fixupMessage(routingKey, newDoc)
-			//newSlice = append(newSlice, newDoc)
-			//old way newMsg["docs"] = newSlice
-			handleKeyValues(submsg)
-			for k, v := range submsg {
-				if k != "event_timestamp" && k != "cb_version" {
-					newMsg[k] = v
-				}
-			}
-			msgs = append(msgs, newMsg)
+		// add links for each message
+		for _, outmsg := range outmsgs {
+			jsp.addLinksToMessage(outmsg)
 		}
-	} else {
-		msgs = append(msgs, msg)
+		return outmsgs, err
 	}
 
-	return msgs, nil
+	return nil, nil
 }
 
 /*
@@ -387,6 +271,124 @@ func (jsp *JsonMessageProcessor) PostprocessJSONMessage(msg map[string]interface
 	return msg
 }
 
+func getString(m map[string]interface{}, k string, dv string) string {
+	if val, ok := m[k]; ok {
+		if strval, ok := val.(string); ok {
+			return strval
+		}
+	}
+	return dv
+}
+
+func getNumber(m map[string]interface{}, k string, dv json.Number) json.Number {
+	if val, ok := m[k]; ok {
+		if numval, ok := val.(json.Number); ok {
+			return numval
+		}
+	}
+	return dv
+}
+
+func getIPAddress(m map[string]interface{}, k string, dv string) string {
+	if val, ok := m[k]; ok {
+		if numval, ok := val.(json.Number); ok {
+			ipaddr, err := strconv.ParseInt(numval.String(), 10, 32)
+			if err == nil {
+				return util.GetIPv4AddressSigned(int32(ipaddr))
+			}
+		} else if strval, ok := val.(string); ok {
+			return strval
+		}
+	}
+	return dv
+}
+
+func copySensorMetadata(subdoc map[string]interface{}, outmsg map[string]interface{}) {
+	// sensor metadata
+	outmsg["sensor_id"] = getNumber(subdoc, "sensor_id", json.Number("0"))
+	outmsg["hostname"] = getString(subdoc, "hostname", "")
+	outmsg["group"] = getString(subdoc, "group", "")
+	outmsg["comms_ip"] = getIPAddress(subdoc, "comms_ip", "")
+	outmsg["interface_ip"] = getIPAddress(subdoc, "interface_ip", "")
+	outmsg["host_type"] = getString(subdoc, "host_type", "")
+	outmsg["os_type"] = getString(subdoc, "os_type", "")
+}
+
+func copyProcessMetadata(subdoc map[string]interface{}, outmsg map[string]interface{}) {
+	// process metadata
+	outmsg["process_md5"] = strings.ToUpper(getString(subdoc, "process_md5", ""))
+	outmsg["process_guid"] = getString(subdoc, "unique_id", "")
+	outmsg["process_name"] = getString(subdoc, "process_name", "")
+	outmsg["cmdline"] = getString(subdoc, "cmdline", "")
+	outmsg["process_pid"] = getNumber(subdoc, "process_pid", json.Number("0"))
+	outmsg["username"] = getString(subdoc, "username", "")
+	outmsg["path"] = getString(subdoc, "path", "")
+}
+
+func copyParentMetadata(subdoc map[string]interface{}, outmsg map[string]interface{}) {
+	// parent process metadata
+	outmsg["parent_md5"] = strings.ToUpper(getString(subdoc, "parent_md5", ""))
+	outmsg["parent_name"] = getString(subdoc, "parent_name", "")
+	outmsg["parent_guid"] = getString(subdoc, "parent_unique_id", "")
+	outmsg["parent_pid"] = getNumber(subdoc, "parent_pid", json.Number("0"))
+}
+
+func copyEventCounts(subdoc map[string]interface{}, outmsg map[string]interface{}) {
+	// process event counts at the time the watchlist/feed/alert hit occurred
+	for _, count := range []string{
+		"modload_count", "filemod_count", "regmod_count", "emet_count",
+		"netconn_count", "crossproc_count", "processblock_count",
+		"childproc_count",
+	} {
+		outmsg[count] = getNumber(subdoc, count, json.Number("0"))
+	}
+}
+
+func (jsp *JsonMessageProcessor) watchlistHitProcess(inmsg map[string]interface{}) ([]map[string]interface{}, error) {
+	// collect fields that are used across all the docs
+	watchlistName := getString(inmsg, "watchlist_name", "")
+	watchlistID := getNumber(inmsg, "watchlist_id", json.Number("0"))
+	cbVersion := getString(inmsg, "cb_version", "")
+	eventTimestamp := getNumber(inmsg, "event_timestamp", json.Number("0"))
+
+	outmsgs := make([]map[string]interface{}, 0, 1)
+
+	// explode watchlist/feed hit messages that include a "docs" array
+	if val, ok := inmsg["docs"]; ok {
+		if subdocs, ok := val.([]interface{}); ok {
+			for _, submsg := range subdocs {
+				if subdoc, ok := submsg.(map[string]interface{}); ok {
+					outmsg := make(map[string]interface{})
+
+					// message metadata
+					outmsg["type"] = "watchlist.hit.process"
+					outmsg["schema_version"] = 2
+
+					// watchlist metadata
+					outmsg["watchlist_name"] = watchlistName
+					outmsg["watchlist_id"] = watchlistID
+
+					// event metadata
+					outmsg["cb_version"] = cbVersion
+					outmsg["event_timestamp"] = eventTimestamp
+
+					copySensorMetadata(subdoc, outmsg)
+					copyProcessMetadata(subdoc, outmsg)
+					copyParentMetadata(subdoc, outmsg)
+					copyEventCounts(subdoc, outmsg)
+
+					// append the message to our output
+					outmsgs = append(outmsgs, outmsg)
+				}
+			}
+		}
+	}
+
+	return outmsgs, nil
+}
+
+// ProcessJSON will take an incoming message and create a set of outgoing key/value
+// pairs ready for the appropriate output function
 func (jsp *JsonMessageProcessor) ProcessJSON(routingKey string, indata []byte) ([]map[string]interface{}, error) {
 	var msg map[string]interface{}
 
@@ -399,9 +401,20 @@ func (jsp *JsonMessageProcessor) ProcessJSON(routingKey string, indata []byte) (
 		return nil, err
 	}
 
-	msgs, err := jsp.ProcessJSONMessage(msg, routingKey)
-	if err != nil {
-		return nil, err
-	}
-	return msgs, nil
+	return jsp.ProcessJSONMessage(msg, routingKey)
+}
+
+func NewJSONProcessor(newConfig Config) *JsonMessageProcessor {
+	jmp := new(JsonMessageProcessor)
+	jmp.DebugFlag = newConfig.DebugFlag
+	jmp.DebugStore = newConfig.DebugStore
+	jmp.EventMap = deepcopy.Iface(newConfig.EventMap).(map[string]bool)
+	jmp.CbServerURL = newConfig.CbServerURL
+	jmp.CbAPI = newConfig.CbAPI
+
+	// create message handlers
+	jmp.messageHandlers = make(map[string]JSONMessageHandlerFunc)
+	jmp.messageHandlers["watchlist.hit.process"] = jmp.watchlistHitProcess
+
+	return jmp
 }

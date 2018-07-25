@@ -26,14 +26,14 @@ type PbMessageProcessor struct {
 	DebugFlag   bool
 	DebugStore  string
 	CbServerURL string
-	EventMap    map[string]interface{}
+	EventMap    map[string]bool
 }
 
 func NewProtobufProcessor(newConfig Config) *PbMessageProcessor {
 	pmp := new(PbMessageProcessor)
 	pmp.DebugFlag = newConfig.DebugFlag
 	pmp.DebugStore = newConfig.DebugStore
-	pmp.EventMap = deepcopy.Iface(newConfig).(map[string]interface{})
+	pmp.EventMap = deepcopy.Iface(newConfig.EventMap).(map[string]bool)
 	pmp.CbServerURL = newConfig.CbServerURL
 
 	return pmp
