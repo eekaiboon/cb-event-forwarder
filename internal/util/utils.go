@@ -183,7 +183,8 @@ func ParseFullGUID(v string) (string, uint64, error) {
 	var segmentNumber uint64
 	var err error
 
-	segmentNumber = 1
+	// default segment number in Cb Response 6.x is now zero
+	segmentNumber = 0
 
 	switch {
 	case len(v) < 36:

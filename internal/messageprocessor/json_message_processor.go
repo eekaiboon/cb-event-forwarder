@@ -314,6 +314,14 @@ func copySensorMetadata(subdoc map[string]interface{}, outmsg map[string]interfa
 	outmsg["os_type"] = getString(subdoc, "os_type", "")
 }
 
+func copyFeedSensorMetadata(subdoc map[string]interface{}, outmsg map[string]interface{}) {
+	// feed messages do not include comms_ip, interface_ip, or host_type
+	outmsg["sensor_id"] = getNumber(subdoc, "sensor_id", json.Number("0"))
+	outmsg["hostname"] = getString(subdoc, "hostname", "")
+	outmsg["group"] = getString(subdoc, "group", "")
+	outmsg["os_type"] = getString(subdoc, "os_type", "")
+}
+
 func copyProcessMetadata(subdoc map[string]interface{}, outmsg map[string]interface{}) {
 	// process metadata
 	outmsg["process_md5"] = strings.ToUpper(getString(subdoc, "process_md5", ""))
@@ -429,6 +437,35 @@ func (jsp *JsonMessageProcessor) watchlistStorageHitProcess(inmsg map[string]int
 		}
 	}
 
+	return outmsgs, nil
+}
+
+func (jsp *JsonMessageProcessor) feedIngressHitProcess(inmsg map[string]interface{}) ([]map[string]interface{}, error) {
+	outmsg := make(map[string]interface{})
+
+	// message metadata
+	outmsg["type"] = "feed.ingress.hit.process"
+	outmsg["schema_version"] = 2
+
+	// feed metadata
+	outmsg["feed_name"] = getString(inmsg, "feed_name", "")
+	outmsg["feed_id"] = getNumber(inmsg, "feed_id", json.Number("0"))
+
+	// event metadata
+	outmsg["cb_version"] = getString(inmsg, "cb_version", "")
+	outmsg["event_timestamp"] = getNumber(inmsg, "event_timestamp", json.Number("0"))
+
+	// report metadata
+	outmsg["report_id"] = getString(inmsg, "report_id", "")
+	outmsg["report_score"] = getNumber(inmsg, "report_score", json.Number("0"))
+
+	// sensor metadata
+	copyFeedSensorMetadata(inmsg, outmsg)
+
+	outmsg["process_guid"] = getString(inmsg, "process_id", "")
+
+	outmsgs := make([]map[string]interface{}, 0, 1)
+	outmsgs = append(outmsgs, outmsg)
 	return outmsgs, nil
 }
 
