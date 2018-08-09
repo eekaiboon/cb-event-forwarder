@@ -31,7 +31,7 @@ input:
 
 ## Subscribed Events 
 The 4.0 event forwarder subcribes to `all-events` by default though the user
-can specify explicity options for which events to listen to as so:
+can specify explicit options for which events to listen to as so:
 (within each individual input element)
 event_map:
     events_watchlist:
