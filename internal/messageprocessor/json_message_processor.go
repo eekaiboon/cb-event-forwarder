@@ -353,6 +353,63 @@ func copyEventCounts(subdoc map[string]interface{}, outmsg map[string]interface{
 	}
 }
 
+var exists = struct{}{}
+
+// convert a list of key/value pairs such as:
+// "alliance_data_bit9advancedthreats": "066eb0b2-f25b-48dc-85ad-ad20b783a25e",
+// "alliance_score_bit9advancedthreats": 100,
+// "alliance_link_bit9advancedthreats": "https://www.carbonblack.com/cbfeeds/advancedthreat_feed.xhtml#6",
+// "alliance_updated_bit9advancedthreats": "2016-12-06T14:30:48.000Z",
+//
+// into:
+// "alliance_data": [
+//   {
+//     "source": "bit9advancedthreats",
+//     "data": "066eb0b2-f25b-48dc-85ad-ad20b783a25e",
+//     "score": 100,
+//     "link": "https://www.carbonblack.com/cbfeeds/advancedthreat_feed.xhtml#6",
+//     "updated": "2016-12-06T14:30:48.000Z"
+//   }
+// ]
+func copyAllianceInformation(subdoc map[string]interface{}, outmsg map[string]interface{}) {
+	var alliance_data_list = make([]map[string]interface{}, 0)
+	var alliance_data_sources = make(map[string]struct{})
+
+	// first get a list of alliance sources
+	for key := range subdoc {
+		if strings.HasPrefix(key, "alliance_") {
+			alliance_data := strings.Split(key, "_")
+			alliance_data_source := alliance_data[2]
+			alliance_data_sources[alliance_data_source] = exists
+		}
+	}
+
+	// now, for each alliance source, get the ["data", "score", "link", and "updated"] fields
+	for source := range alliance_data_sources {
+		temp := make(map[string]interface{})
+		temp["source"] = source
+		// TODO: for now we take the last 'data' item from the list. The other 'alliance' fields are singletons,
+		// so it doesn't make any sense to make this an array...
+		if val, ok := subdoc["alliance_data_"+source]; ok {
+			if sliceval, ok := val.([]string); ok {
+				// take the last item from the list
+				numelements := len(sliceval)
+				temp["data"] = sliceval[numelements-1]
+			} else if strval, ok := val.(string); ok {
+				temp["data"] = strval
+			} else {
+				temp["data"] = ""
+			}
+		}
+		temp["score"] = getNumber(subdoc, "alliance_score_"+source, json.Number("0"))
+		temp["link"] = getString(subdoc, "alliance_link_"+source, "")
+		temp["updated"] = getString(subdoc, "alliance_updated_"+source, "")
+		alliance_data_list = append(alliance_data_list, temp)
+	}
+
+	outmsg["alliance_data"] = alliance_data_list
+}
+
 func (jsp *JsonMessageProcessor) watchlistHitProcess(inmsg map[string]interface{}) ([]map[string]interface{}, error) {
 	// collect fields that are used across all the docs
 	watchlistName := getString(inmsg, "watchlist_name", "")
@@ -462,10 +519,81 @@ func (jsp *JsonMessageProcessor) feedIngressHitProcess(inmsg map[string]interfac
 	// sensor metadata
 	copyFeedSensorMetadata(inmsg, outmsg)
 
+	// report IOC attributes
+	outmsg["ioc_type"] = getString(inmsg, "ioc_type", "")
+	outmsg["ioc_value"] = getString(inmsg, "ioc_value", "")
+
+	// TODO: for IP address feed hits, ioc_attr includes the full src/dest IP address info for the
+	// offending netconn. The src/dest IP addresses are signed integers, however. They need to be
+	// converted into dotted quad strings.
+	if val, ok := inmsg["ioc_attr"]; ok {
+		if objval, ok := val.(map[string]interface{}); ok {
+			outmsg["ioc_attr"] = deepcopy.Iface(objval).(map[string]interface{})
+		} else {
+			outmsg["ioc_attr"] = make(map[string]interface{})
+		}
+	} else {
+		outmsg["ioc_attr"] = make(map[string]interface{})
+	}
+
+	// NOTE in this case the GUID is missing the segment ID. We don't have that yet.
 	outmsg["process_guid"] = getString(inmsg, "process_id", "")
 
 	outmsgs := make([]map[string]interface{}, 0, 1)
 	outmsgs = append(outmsgs, outmsg)
+	return outmsgs, nil
+}
+
+func (jsp *JsonMessageProcessor) feedStorageHitProcess(inmsg map[string]interface{}) ([]map[string]interface{}, error) {
+	outmsgs := make([]map[string]interface{}, 0, 1)
+
+	// explode watchlist/feed hit messages that include a "docs" array
+	if val, ok := inmsg["docs"]; ok {
+		if subdocs, ok := val.([]interface{}); ok {
+			for _, submsg := range subdocs {
+				if subdoc, ok := submsg.(map[string]interface{}); ok {
+					outmsg := make(map[string]interface{})
+					// message metadata
+					outmsg["type"] = "feed.storage.hit.process"
+					outmsg["schema_version"] = 2
+
+					// feed metadata
+					outmsg["feed_name"] = getString(inmsg, "feed_name", "")
+					outmsg["feed_id"] = getNumber(inmsg, "feed_id", json.Number("0"))
+
+					// event metadata
+					outmsg["cb_version"] = getString(inmsg, "cb_version", "")
+					outmsg["event_timestamp"] = getNumber(inmsg, "event_timestamp", json.Number("0"))
+
+					// report metadata
+					outmsg["report_id"] = getString(inmsg, "report_id", "")
+					outmsg["report_score"] = getNumber(inmsg, "report_score", json.Number("0"))
+
+					// get alliance data
+					copyAllianceInformation(inmsg, outmsg)
+
+					// sensor metadata
+					// note that we have to be clever here since some keys are in the 'docs' array, others are not
+					outmsg["sensor_id"] = getNumber(inmsg, "sensor_id", json.Number("0"))
+					outmsg["hostname"] = getString(inmsg, "hostname", "")
+					outmsg["group"] = getString(inmsg, "group", "")
+					outmsg["comms_ip"] = getIPAddress(inmsg, "comms_ip", "")
+					outmsg["interface_ip"] = getIPAddress(inmsg, "interface_ip", "")
+					outmsg["host_type"] = getString(subdoc, "host_type", "")
+					outmsg["os_type"] = getString(subdoc, "os_type", "")
+
+					// process metadata
+					copyProcessMetadata(subdoc, outmsg)
+					copyParentMetadata(subdoc, outmsg)
+					copyEventCounts(subdoc, outmsg)
+
+					outmsgs := make([]map[string]interface{}, 0, 1)
+					outmsgs = append(outmsgs, outmsg)
+				}
+			}
+		}
+	}
+
 	return outmsgs, nil
 }
 
@@ -498,6 +626,7 @@ func NewJSONProcessor(newConfig Config) *JsonMessageProcessor {
 	jmp.messageHandlers = make(map[string]JSONMessageHandlerFunc)
 	jmp.messageHandlers["watchlist.hit.process"] = jmp.watchlistHitProcess
 	jmp.messageHandlers["watchlist.storage.hit.process"] = jmp.watchlistStorageHitProcess
+	jmp.messageHandlers["feed.ingress.hit.process"] = jmp.feedIngressHitProcess
 
 	return jmp
 }
