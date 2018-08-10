@@ -66,15 +66,17 @@ func handleKeyValues(msg map[string]interface{}) {
 		switch {
 		case strings.Contains(key, "alliance_"):
 			alliance_data := strings.Split(key, "_")
-			alliance_data_source := alliance_data[2]
-			alliance_data_key := alliance_data[1]
-			alliance_map, alreadyexists := alliance_data_map[alliance_data_source]
-			if alreadyexists {
-				alliance_map[alliance_data_key] = value
-			} else {
-				temp := make(map[string]interface{})
-				temp[alliance_data_key] = value
-				alliance_data_map[alliance_data_source] = temp
+			if len(alliance_data) == 3 {
+				alliance_data_source := alliance_data[2]
+				alliance_data_key := alliance_data[1]
+				alliance_map, alreadyexists := alliance_data_map[alliance_data_source]
+				if alreadyexists {
+					alliance_map[alliance_data_key] = value
+				} else {
+					temp := make(map[string]interface{})
+					temp[alliance_data_key] = value
+					alliance_data_map[alliance_data_source] = temp
+				}
 			}
 			delete(msg, key)
 		case key == "endpoint":
@@ -303,6 +305,16 @@ func getIPAddress(m map[string]interface{}, k string, dv string) string {
 	return dv
 }
 
+// returns nil if the boolean can't be decoded
+func getBool(m map[string]interface{}, k string) interface{} {
+	if val, ok := m[k]; ok {
+		if boolval, ok := val.(bool); ok {
+			return boolval
+		}
+	}
+	return nil
+}
+
 func copySensorMetadata(subdoc map[string]interface{}, outmsg map[string]interface{}) {
 	// sensor metadata
 	outmsg["sensor_id"] = getNumber(subdoc, "sensor_id", json.Number("0"))
@@ -351,6 +363,26 @@ func copyEventCounts(subdoc map[string]interface{}, outmsg map[string]interface{
 	} {
 		outmsg[count] = getNumber(subdoc, count, json.Number("0"))
 	}
+}
+
+func copyBinaryMetadata(subdoc map[string]interface{}, outmsg map[string]interface{}) {
+	// binary metadata
+	outmsg["digsig_result"] = getString(subdoc, "digsig_result", "(unknown)")
+	outmsg["digsig_result_code"] = getString(subdoc, "digsig_result_code", "")
+	outmsg["product_version"] = getString(subdoc, "product_version", "")
+	outmsg["copied_mod_len"] = getNumber(subdoc, "copied_mod_len", json.Number("0"))
+	outmsg["orig_mod_len"] = getNumber(subdoc, "orig_mod_len", json.Number("0"))
+	outmsg["is_executable_image"] = getBool(subdoc, "is_executable_image")
+	outmsg["is_64bit"] = getBool(subdoc, "is_64bit")
+	outmsg["md5"] = getString(subdoc, "md5", "")
+	outmsg["file_version"] = getString(subdoc, "file_version", "")
+	outmsg["internal_name"] = getString(subdoc, "internal_name", "")
+	outmsg["company_name"] = getString(subdoc, "company_name", "")
+	outmsg["original_filename"] = getString(subdoc, "original_filename", "")
+	outmsg["os_type"] = getString(subdoc, "os_type", "")
+	outmsg["file_desc"] = getString(subdoc, "file_desc", "")
+	outmsg["product_name"] = getString(subdoc, "product_name", "")
+	outmsg["legal_copyright"] = getString(subdoc, "legal_copyright", "")
 }
 
 var exists = struct{}{}
@@ -526,15 +558,19 @@ func (jsp *JsonMessageProcessor) feedIngressHitProcess(inmsg map[string]interfac
 	// TODO: for IP address feed hits, ioc_attr includes the full src/dest IP address info for the
 	// offending netconn. The src/dest IP addresses are signed integers, however. They need to be
 	// converted into dotted quad strings.
-	if val, ok := inmsg["ioc_attr"]; ok {
-		if objval, ok := val.(map[string]interface{}); ok {
-			outmsg["ioc_attr"] = deepcopy.Iface(objval).(map[string]interface{})
-		} else {
-			outmsg["ioc_attr"] = make(map[string]interface{})
-		}
-	} else {
-		outmsg["ioc_attr"] = make(map[string]interface{})
-	}
+	//
+	// for other events, ioc_attr includes a 'highlights' field which serves just to confuse more than
+	// anything. For now let's remove it.
+
+	// if val, ok := inmsg["ioc_attr"]; ok {
+	// 	if objval, ok := val.(map[string]interface{}); ok {
+	// 		outmsg["ioc_attr"] = deepcopy.Iface(objval).(map[string]interface{})
+	// 	} else {
+	// 		outmsg["ioc_attr"] = make(map[string]interface{})
+	// 	}
+	// } else {
+	// 	outmsg["ioc_attr"] = make(map[string]interface{})
+	// }
 
 	// NOTE in this case the GUID is missing the segment ID. We don't have that yet.
 	outmsg["process_guid"] = getString(inmsg, "process_id", "")
@@ -587,7 +623,112 @@ func (jsp *JsonMessageProcessor) feedStorageHitProcess(inmsg map[string]interfac
 					copyParentMetadata(subdoc, outmsg)
 					copyEventCounts(subdoc, outmsg)
 
-					outmsgs := make([]map[string]interface{}, 0, 1)
+					outmsgs = append(outmsgs, outmsg)
+				}
+			}
+		}
+	}
+
+	return outmsgs, nil
+}
+
+func (jsp *JsonMessageProcessor) watchlistHitBinary(inmsg map[string]interface{}) ([]map[string]interface{}, error) {
+	outmsgs := make([]map[string]interface{}, 0, 1)
+
+	// collect fields that are used across all the docs
+	watchlistName := getString(inmsg, "watchlist_name", "")
+	watchlistID := getNumber(inmsg, "watchlist_id", json.Number("0"))
+	cbVersion := getString(inmsg, "cb_version", "")
+	eventTimestamp := getNumber(inmsg, "event_timestamp", json.Number("0"))
+
+	if val, ok := inmsg["docs"]; ok {
+		if subdocs, ok := val.([]interface{}); ok {
+			for _, submsg := range subdocs {
+				if subdoc, ok := submsg.(map[string]interface{}); ok {
+					outmsg := make(map[string]interface{})
+					// message metadata
+					outmsg["type"] = "watchlist.hit.binary"
+					outmsg["schema_version"] = 2
+
+					// watchlist metadata
+					outmsg["watchlist_name"] = watchlistName
+					outmsg["watchlist_id"] = watchlistID
+
+					// event metadata
+					outmsg["cb_version"] = cbVersion
+					outmsg["event_timestamp"] = eventTimestamp
+					outmsg["host_count"] = getNumber(subdoc, "host_count", json.Number("0"))
+					outmsg["last_seen"] = getString(subdoc, "last_seen", "")
+
+					copyBinaryMetadata(subdoc, outmsg)
+
+					// details on the endpoints this was found on... these are arrays
+					// TODO: endpoint should be split apart into its separate fields
+					for _, endpointdetail := range []string{"observed_filename", "endpoint", "group"} {
+						if val, ok := inmsg[endpointdetail]; ok {
+							if objval, ok := val.(map[string]interface{}); ok {
+								outmsg[endpointdetail] = deepcopy.Iface(objval).(map[string]interface{})
+							} else {
+								outmsg[endpointdetail] = make(map[string]interface{})
+							}
+						} else {
+							outmsg[endpointdetail] = make(map[string]interface{})
+						}
+					}
+
+					outmsgs = append(outmsgs, outmsg)
+				}
+			}
+		}
+	}
+	return outmsgs, nil
+}
+
+func (jsp *JsonMessageProcessor) watchlistStorageHitBinary(inmsg map[string]interface{}) ([]map[string]interface{}, error) {
+	outmsgs := make([]map[string]interface{}, 0, 1)
+
+	// collect fields that are used across all the docs
+	watchlistName := getString(inmsg, "watchlist_name", "")
+	watchlistID := getNumber(inmsg, "watchlist_id", json.Number("0"))
+	cbVersion := getString(inmsg, "cb_version", "")
+	eventTimestamp := getNumber(inmsg, "event_timestamp", json.Number("0"))
+
+	if val, ok := inmsg["docs"]; ok {
+		if subdocs, ok := val.([]interface{}); ok {
+			for _, submsg := range subdocs {
+				if subdoc, ok := submsg.(map[string]interface{}); ok {
+					outmsg := make(map[string]interface{})
+					// message metadata
+					outmsg["type"] = "watchlist.storage.hit.binary"
+					outmsg["schema_version"] = 2
+
+					// watchlist metadata
+					outmsg["watchlist_name"] = watchlistName
+					outmsg["watchlist_id"] = watchlistID
+
+					// event metadata
+					outmsg["cb_version"] = cbVersion
+					outmsg["event_timestamp"] = eventTimestamp
+					outmsg["host_count"] = getNumber(subdoc, "host_count", json.Number("0"))
+					outmsg["last_seen"] = getString(subdoc, "last_seen", "")
+
+					copyBinaryMetadata(subdoc, outmsg)
+
+					outmsg["observed_filename"] = getString(subdoc, "observed_filename", "")
+					endpoint := getString(subdoc, "endpoint", "")
+
+					// split endpoint into hostname and sensor_id
+					sensorparts := strings.Split(endpoint, "|")
+					if len(sensorparts) == 2 {
+						hostname := sensorparts[0]
+						sensorID := sensorparts[1]
+						outmsg["hostname"] = hostname
+						outmsg["sensor_id"], _ = strconv.ParseInt(sensorID, 10, 64)
+					}
+
+					outmsg["group"] = getString(subdoc, "group", "")
+					outmsg["observed_filename"] = getString(subdoc, "observed_filename", "")
+
 					outmsgs = append(outmsgs, outmsg)
 				}
 			}
@@ -627,6 +768,9 @@ func NewJSONProcessor(newConfig Config) *JsonMessageProcessor {
 	jmp.messageHandlers["watchlist.hit.process"] = jmp.watchlistHitProcess
 	jmp.messageHandlers["watchlist.storage.hit.process"] = jmp.watchlistStorageHitProcess
 	jmp.messageHandlers["feed.ingress.hit.process"] = jmp.feedIngressHitProcess
+	jmp.messageHandlers["feed.storage.hit.process"] = jmp.feedStorageHitProcess
+	jmp.messageHandlers["watchlist.hit.binary"] = jmp.watchlistHitBinary
+	jmp.messageHandlers["watchlist.storage.hit.binary"] = jmp.watchlistStorageHitBinary
 
 	return jmp
 }
