@@ -17,7 +17,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type JSONMessageHandlerFunc func(inmsg map[string]interface{}) ([]map[string]interface{}, error)
+type JSONMessageHandlerFunc func(msgtype string, inmsg map[string]interface{}) ([]map[string]interface{}, error)
 
 type JsonMessageProcessor struct {
 	DebugFlag       bool
@@ -207,7 +207,7 @@ func (jsp *JsonMessageProcessor) ProcessJSONMessage(msg map[string]interface{}, 
 	messageType := fixupMessageType(routingKey)
 
 	if processfunc, ok := jsp.messageHandlers[messageType]; ok {
-		outmsgs, err := processfunc(msg)
+		outmsgs, err := processfunc(messageType, msg)
 
 		// add links for each message
 		for _, outmsg := range outmsgs {
@@ -442,7 +442,7 @@ func copyAllianceInformation(subdoc map[string]interface{}, outmsg map[string]in
 	outmsg["alliance_data"] = alliance_data_list
 }
 
-func (jsp *JsonMessageProcessor) watchlistHitProcess(inmsg map[string]interface{}) ([]map[string]interface{}, error) {
+func (jsp *JsonMessageProcessor) watchlistHitProcess(msgtype string, inmsg map[string]interface{}) ([]map[string]interface{}, error) {
 	// collect fields that are used across all the docs
 	watchlistName := getString(inmsg, "watchlist_name", "")
 	watchlistID := getNumber(inmsg, "watchlist_id", json.Number("0"))
@@ -485,7 +485,7 @@ func (jsp *JsonMessageProcessor) watchlistHitProcess(inmsg map[string]interface{
 	return outmsgs, nil
 }
 
-func (jsp *JsonMessageProcessor) watchlistStorageHitProcess(inmsg map[string]interface{}) ([]map[string]interface{}, error) {
+func (jsp *JsonMessageProcessor) watchlistStorageHitProcess(msgtype string, inmsg map[string]interface{}) ([]map[string]interface{}, error) {
 	// collect fields that are used across all the docs
 	watchlistName := getString(inmsg, "watchlist_name", "")
 	watchlistID := getNumber(inmsg, "watchlist_id", json.Number("0"))
@@ -529,7 +529,7 @@ func (jsp *JsonMessageProcessor) watchlistStorageHitProcess(inmsg map[string]int
 	return outmsgs, nil
 }
 
-func (jsp *JsonMessageProcessor) feedIngressHitProcess(inmsg map[string]interface{}) ([]map[string]interface{}, error) {
+func (jsp *JsonMessageProcessor) feedIngressHitProcess(msgtype string, inmsg map[string]interface{}) ([]map[string]interface{}, error) {
 	outmsg := make(map[string]interface{})
 
 	// message metadata
@@ -580,7 +580,7 @@ func (jsp *JsonMessageProcessor) feedIngressHitProcess(inmsg map[string]interfac
 	return outmsgs, nil
 }
 
-func (jsp *JsonMessageProcessor) feedStorageHitProcess(inmsg map[string]interface{}) ([]map[string]interface{}, error) {
+func (jsp *JsonMessageProcessor) feedStorageHitProcess(msgtype string, inmsg map[string]interface{}) ([]map[string]interface{}, error) {
 	outmsgs := make([]map[string]interface{}, 0, 1)
 
 	// explode watchlist/feed hit messages that include a "docs" array
@@ -590,7 +590,7 @@ func (jsp *JsonMessageProcessor) feedStorageHitProcess(inmsg map[string]interfac
 				if subdoc, ok := submsg.(map[string]interface{}); ok {
 					outmsg := make(map[string]interface{})
 					// message metadata
-					outmsg["type"] = "feed.storage.hit.process"
+					outmsg["type"] = msgtype
 					outmsg["schema_version"] = 2
 
 					// feed metadata
@@ -605,8 +605,10 @@ func (jsp *JsonMessageProcessor) feedStorageHitProcess(inmsg map[string]interfac
 					outmsg["report_id"] = getString(inmsg, "report_id", "")
 					outmsg["report_score"] = getNumber(inmsg, "report_score", json.Number("0"))
 
-					// get alliance data
-					copyAllianceInformation(inmsg, outmsg)
+					if msgtype == "feed.storage.hit.process" {
+						// get alliance data
+						copyAllianceInformation(inmsg, outmsg)
+					}
 
 					// sensor metadata
 					// note that we have to be clever here since some keys are in the 'docs' array, others are not
@@ -632,7 +634,7 @@ func (jsp *JsonMessageProcessor) feedStorageHitProcess(inmsg map[string]interfac
 	return outmsgs, nil
 }
 
-func (jsp *JsonMessageProcessor) watchlistHitBinary(inmsg map[string]interface{}) ([]map[string]interface{}, error) {
+func (jsp *JsonMessageProcessor) watchlistHitBinary(msgtype string, inmsg map[string]interface{}) ([]map[string]interface{}, error) {
 	outmsgs := make([]map[string]interface{}, 0, 1)
 
 	// collect fields that are used across all the docs
@@ -684,7 +686,7 @@ func (jsp *JsonMessageProcessor) watchlistHitBinary(inmsg map[string]interface{}
 	return outmsgs, nil
 }
 
-func (jsp *JsonMessageProcessor) watchlistStorageHitBinary(inmsg map[string]interface{}) ([]map[string]interface{}, error) {
+func (jsp *JsonMessageProcessor) watchlistStorageHitBinary(msgtype string, inmsg map[string]interface{}) ([]map[string]interface{}, error) {
 	outmsgs := make([]map[string]interface{}, 0, 1)
 
 	// collect fields that are used across all the docs
@@ -738,6 +740,137 @@ func (jsp *JsonMessageProcessor) watchlistStorageHitBinary(inmsg map[string]inte
 	return outmsgs, nil
 }
 
+func (jsp *JsonMessageProcessor) alertWatchlistHitProcess(msgtype string, inmsg map[string]interface{}) ([]map[string]interface{}, error) {
+	outmsg := make(map[string]interface{})
+
+	// message metadata
+	outmsg["type"] = msgtype
+	outmsg["schema_version"] = 2
+
+	// TODO: determine whether this is a feed or watchlist hit
+	feedId, err := getNumber(inmsg, "feed_id", json.Number("-1")).Int64()
+	if feedId == -1 {
+		// this is a watchlist hit, treat appropriately
+		// watchlist metadata
+		outmsg["watchlist_name"] = getString(inmsg, "watchlist_name", "")
+
+		// watchlist IDs are strings in the input, change to integer
+		outmsg["watchlist_id"] = json.Number(getString(inmsg, "watchlist_id", "0"))
+	} else if err == nil {
+		// this is a feed hit, treat appropriately
+		// feed metadata
+		outmsg["feed_name"] = getString(inmsg, "feed_name", "")
+		outmsg["feed_id"] = getNumber(inmsg, "feed_id", json.Number("0"))
+		outmsg["report_id"] = getString(inmsg, "watchlist_id", "")
+		outmsg["feed_rating"] = getNumber(inmsg, "feed_rating", json.Number("0"))
+	} else {
+		return nil, fmt.Errorf("Could not parse feed_id from incoming alert message: %s", err.Error())
+	}
+
+	// TODO: what's the score for a watchlist hit?
+	outmsg["report_score"] = getNumber(inmsg, "report_score", json.Number("0"))
+
+	// copy event counts
+	copyEventCounts(inmsg, outmsg)
+
+	// sensor metadata includes everything but host_type
+	outmsg["sensor_id"] = getNumber(inmsg, "sensor_id", json.Number("0"))
+	outmsg["hostname"] = getString(inmsg, "hostname", "")
+	outmsg["group"] = getString(inmsg, "group", "")
+	outmsg["comms_ip"] = getIPAddress(inmsg, "comms_ip", "")
+	outmsg["interface_ip"] = getIPAddress(inmsg, "interface_ip", "")
+	outmsg["os_type"] = getString(inmsg, "os_type", "")
+
+	// add alert metadata
+	outmsg["id"] = getString(inmsg, "unique_id", "")
+	outmsg["alert_severity"] = getNumber(inmsg, "alert_severity", json.Number("0"))
+	outmsg["ioc_confidence"] = getNumber(inmsg, "ioc_confidence", json.Number("0"))
+	outmsg["sensor_criticality"] = getNumber(inmsg, "sensor_criticality", json.Number("0"))
+	outmsg["alert_type"] = getString(inmsg, "alert_type", "")
+	outmsg["status"] = getString(inmsg, "status", "")
+
+	// report IOC attributes
+	outmsg["ioc_type"] = getString(inmsg, "ioc_type", "")
+
+	// `ioc_value` is only filled in for alert.watchlist.hit.ingress.process type events
+	// (not available for alert.watchlist.hit.query.process events)
+	if msgtype == "alert.watchlist.hit.ingress.process" {
+		outmsg["ioc_value"] = getString(inmsg, "ioc_value", "")
+	}
+
+	// TODO: for this message type, ioc_attr is a string-ified JSON (other event types are the actual object)
+	//  thoughts?
+
+	// process metadata
+	outmsg["process_name"] = getString(inmsg, "process_name", "")
+	outmsg["process_path"] = getString(inmsg, "process_path", "")
+	outmsg["username"] = getString(inmsg, "username", "")
+	// TODO: is 'md5' guaranteed to be the process md5?
+	outmsg["process_md5"] = getString(inmsg, "md5", "")
+
+	// TODO: created_time appears to be event_timestamp just in string form. Eliminate one?
+	outmsg["created_time"] = getString(inmsg, "created_time", "")
+	outmsg["event_timestamp"] = getNumber(inmsg, "event_timestamp", json.Number("0"))
+	outmsg["process_guid"] = getString(inmsg, "process_unique_id", "")
+
+	outmsgs := make([]map[string]interface{}, 0, 1)
+	outmsgs = append(outmsgs, outmsg)
+	return outmsgs, nil
+}
+
+func (jsp *JsonMessageProcessor) binarystoreFileAdded(msgtype string, inmsg map[string]interface{}) ([]map[string]interface{}, error) {
+	outmsg := make(map[string]interface{})
+
+	// message metadata
+	outmsg["type"] = msgtype
+	outmsg["schema_version"] = 2
+
+	outmsg["md5"] = getString(inmsg, "md5", "")
+	outmsg["size"] = getNumber(inmsg, "size", json.Number("0"))
+	outmsg["compressed_size"] = getNumber(inmsg, "compressed_size", json.Number("0"))
+	outmsg["node_id"] = getNumber(inmsg, "node_id", json.Number("0"))
+	outmsg["file_path"] = getString(inmsg, "file_path", "")
+
+	outmsg["event_timestamp"] = getNumber(inmsg, "event_timestamp", json.Number("0"))
+	outmsgs := make([]map[string]interface{}, 0, 1)
+	outmsgs = append(outmsgs, outmsg)
+	return outmsgs, nil
+}
+
+func (jsp *JsonMessageProcessor) binaryinfoObserved(msgtype string, inmsg map[string]interface{}) ([]map[string]interface{}, error) {
+	outmsg := make(map[string]interface{})
+
+	// message metadata
+	outmsg["type"] = msgtype
+	outmsg["schema_version"] = 2
+
+	outmsg["md5"] = getString(inmsg, "md5", "")
+
+	if msgtype == "binaryinfo.host.observed" {
+		outmsg["hostname"] = getString(inmsg, "hostname", "")
+		outmsg["sensor_id"] = getNumber(inmsg, "sensor_id", json.Number("0"))
+	} else if msgtype == "binaryinfo.group.observed" {
+		outmsg["group"] = getString(inmsg, "group", "")
+	}
+
+	for _, k := range []string{"scores", "watchlists"} {
+		if val, ok := inmsg[k]; ok {
+			if objval, ok := val.(map[string]interface{}); ok {
+				outmsg[k] = deepcopy.Iface(objval).(map[string]interface{})
+			} else {
+				outmsg[k] = make(map[string]interface{})
+			}
+		} else {
+			outmsg[k] = make(map[string]interface{})
+		}
+	}
+
+	outmsg["event_timestamp"] = getNumber(inmsg, "event_timestamp", json.Number("0"))
+	outmsgs := make([]map[string]interface{}, 0, 1)
+	outmsgs = append(outmsgs, outmsg)
+	return outmsgs, nil
+}
+
 // ProcessJSON will take an incoming message and create a set of outgoing key/value
 // pairs ready for the appropriate output function
 func (jsp *JsonMessageProcessor) ProcessJSON(routingKey string, indata []byte) ([]map[string]interface{}, error) {
@@ -765,12 +898,23 @@ func NewJSONProcessor(newConfig Config) *JsonMessageProcessor {
 
 	// create message handlers
 	jmp.messageHandlers = make(map[string]JSONMessageHandlerFunc)
+
 	jmp.messageHandlers["watchlist.hit.process"] = jmp.watchlistHitProcess
 	jmp.messageHandlers["watchlist.storage.hit.process"] = jmp.watchlistStorageHitProcess
-	jmp.messageHandlers["feed.ingress.hit.process"] = jmp.feedIngressHitProcess
-	jmp.messageHandlers["feed.storage.hit.process"] = jmp.feedStorageHitProcess
 	jmp.messageHandlers["watchlist.hit.binary"] = jmp.watchlistHitBinary
 	jmp.messageHandlers["watchlist.storage.hit.binary"] = jmp.watchlistStorageHitBinary
+
+	jmp.messageHandlers["feed.ingress.hit.process"] = jmp.feedIngressHitProcess
+	jmp.messageHandlers["feed.storage.hit.process"] = jmp.feedStorageHitProcess
+	jmp.messageHandlers["feed.query.hit.process"] = jmp.feedStorageHitProcess
+
+	jmp.messageHandlers["alert.watchlist.hit.ingress.process"] = jmp.alertWatchlistHitProcess
+	jmp.messageHandlers["alert.watchlist.hit.query.process"] = jmp.alertWatchlistHitProcess
+
+	jmp.messageHandlers["binarystore.file.added"] = jmp.binarystoreFileAdded
+	jmp.messageHandlers["binaryinfo.observed"] = jmp.binaryinfoObserved
+	jmp.messageHandlers["binaryinfo.host.observed"] = jmp.binaryinfoObserved
+	jmp.messageHandlers["binaryinfo.group.observed"] = jmp.binaryinfoObserved
 
 	return jmp
 }
