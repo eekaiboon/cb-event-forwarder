@@ -305,7 +305,7 @@ func GetCbEventForwarderFromCfg(config map[string]interface{}) CbEventForwarder 
 		if err != nil {
 			log.Panicf("Error consturcting consumer from configuration: %v", err)
 		}
-		eventMap := make(map[string]interface{})
+		eventMap := make(map[string]bool)
 		for _, e := range c.RoutingKeys {
 			eventMap[e] = true
 		}

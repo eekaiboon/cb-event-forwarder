@@ -740,13 +740,7 @@ func (jsp *JsonMessageProcessor) watchlistStorageHitBinary(msgtype string, inmsg
 	return outmsgs, nil
 }
 
-func (jsp *JsonMessageProcessor) alertWatchlistHitProcess(msgtype string, inmsg map[string]interface{}) ([]map[string]interface{}, error) {
-	outmsg := make(map[string]interface{})
-
-	// message metadata
-	outmsg["type"] = msgtype
-	outmsg["schema_version"] = 2
-
+func copyAlertMetadata(msgtype string, inmsg map[string]interface{}, outmsg map[string]interface{}) error {
 	// TODO: determine whether this is a feed or watchlist hit
 	feedId, err := getNumber(inmsg, "feed_id", json.Number("-1")).Int64()
 	if feedId == -1 {
@@ -764,22 +758,11 @@ func (jsp *JsonMessageProcessor) alertWatchlistHitProcess(msgtype string, inmsg 
 		outmsg["report_id"] = getString(inmsg, "watchlist_id", "")
 		outmsg["feed_rating"] = getNumber(inmsg, "feed_rating", json.Number("0"))
 	} else {
-		return nil, fmt.Errorf("Could not parse feed_id from incoming alert message: %s", err.Error())
+		return fmt.Errorf("Could not parse feed_id from incoming alert message: %s", err.Error())
 	}
 
 	// TODO: what's the score for a watchlist hit?
 	outmsg["report_score"] = getNumber(inmsg, "report_score", json.Number("0"))
-
-	// copy event counts
-	copyEventCounts(inmsg, outmsg)
-
-	// sensor metadata includes everything but host_type
-	outmsg["sensor_id"] = getNumber(inmsg, "sensor_id", json.Number("0"))
-	outmsg["hostname"] = getString(inmsg, "hostname", "")
-	outmsg["group"] = getString(inmsg, "group", "")
-	outmsg["comms_ip"] = getIPAddress(inmsg, "comms_ip", "")
-	outmsg["interface_ip"] = getIPAddress(inmsg, "interface_ip", "")
-	outmsg["os_type"] = getString(inmsg, "os_type", "")
 
 	// add alert metadata
 	outmsg["id"] = getString(inmsg, "unique_id", "")
@@ -792,14 +775,39 @@ func (jsp *JsonMessageProcessor) alertWatchlistHitProcess(msgtype string, inmsg 
 	// report IOC attributes
 	outmsg["ioc_type"] = getString(inmsg, "ioc_type", "")
 
-	// `ioc_value` is only filled in for alert.watchlist.hit.ingress.process type events
-	// (not available for alert.watchlist.hit.query.process events)
-	if msgtype == "alert.watchlist.hit.ingress.process" {
+	// TODO: for this message type, ioc_attr is a string-ified JSON (other event types are the actual object)
+	//  thoughts?
+
+	// `ioc_value` not available for alert.watchlist.hit.query.process events
+	if msgtype != "alert.watchlist.hit.query.process" {
 		outmsg["ioc_value"] = getString(inmsg, "ioc_value", "")
 	}
 
-	// TODO: for this message type, ioc_attr is a string-ified JSON (other event types are the actual object)
-	//  thoughts?
+	return nil
+}
+
+func (jsp *JsonMessageProcessor) alertWatchlistHitProcess(msgtype string, inmsg map[string]interface{}) ([]map[string]interface{}, error) {
+	outmsg := make(map[string]interface{})
+
+	// message metadata
+	outmsg["type"] = msgtype
+	outmsg["schema_version"] = 2
+
+	err := copyAlertMetadata(msgtype, inmsg, outmsg)
+	if err != nil {
+		return nil, err
+	}
+
+	// copy event counts
+	copyEventCounts(inmsg, outmsg)
+
+	// sensor metadata includes everything but host_type
+	outmsg["sensor_id"] = getNumber(inmsg, "sensor_id", json.Number("0"))
+	outmsg["hostname"] = getString(inmsg, "hostname", "")
+	outmsg["group"] = getString(inmsg, "group", "")
+	outmsg["comms_ip"] = getIPAddress(inmsg, "comms_ip", "")
+	outmsg["interface_ip"] = getIPAddress(inmsg, "interface_ip", "")
+	outmsg["os_type"] = getString(inmsg, "os_type", "")
 
 	// process metadata
 	outmsg["process_name"] = getString(inmsg, "process_name", "")
@@ -888,6 +896,79 @@ func (jsp *JsonMessageProcessor) ProcessJSON(routingKey string, indata []byte) (
 	return jsp.ProcessJSONMessage(msg, routingKey)
 }
 
+func (jsp *JsonMessageProcessor) alertWatchlistHitBinary(msgtype string, inmsg map[string]interface{}) ([]map[string]interface{}, error) {
+	outmsg := make(map[string]interface{})
+
+	// message metadata
+	outmsg["type"] = msgtype
+	outmsg["schema_version"] = 2
+
+	err := copyAlertMetadata(msgtype, inmsg, outmsg)
+	if err != nil {
+		return nil, err
+	}
+
+	outmsg["md5"] = getString(inmsg, "md5", "")
+	outmsg["digsig_result"] = getString(inmsg, "digsig_result", "(unknown)")
+
+	if val, ok := inmsg["observed_filename"]; ok {
+		if objval, ok := val.(map[string]interface{}); ok {
+			outmsg["observed_filename"] = deepcopy.Iface(objval).(map[string]interface{})
+		} else {
+			outmsg["observed_filename"] = make(map[string]interface{})
+		}
+	} else {
+		outmsg["observed_filename"] = make(map[string]interface{})
+	}
+
+	hostnames := make([]string, 0, 1)
+	hostname := getString(inmsg, "hostname", "")
+	if hostname != "" {
+		hostnames = append(hostnames, hostname)
+	}
+	if val, ok := inmsg["other_hostnames"]; ok {
+		if objval, ok := val.([]string); ok {
+			for _, hostname = range objval {
+				hostnames = append(hostnames, hostname)
+			}
+		}
+	}
+	outmsg["hostnames"] = hostnames
+
+	outmsg["event_timestamp"] = getNumber(inmsg, "event_timestamp", json.Number("0"))
+	outmsg["created_time"] = getString(inmsg, "created_time", "")
+
+	outmsgs := make([]map[string]interface{}, 0, 1)
+	outmsgs = append(outmsgs, outmsg)
+	return outmsgs, nil
+}
+
+func (jsp *JsonMessageProcessor) alertWatchlistHitHost(msgtype string, inmsg map[string]interface{}) ([]map[string]interface{}, error) {
+	outmsg := make(map[string]interface{})
+
+	// message metadata
+	outmsg["type"] = msgtype
+	outmsg["schema_version"] = 2
+
+	err := copyAlertMetadata(msgtype, inmsg, outmsg)
+	if err != nil {
+		return nil, err
+	}
+
+	outmsg["event_timestamp"] = getNumber(inmsg, "event_timestamp", json.Number("0"))
+	outmsg["created_time"] = getString(inmsg, "created_time", "")
+
+	// sensor metadata includes everything but host_type, comms_ip, and interface_ip
+	outmsg["sensor_id"] = getNumber(inmsg, "sensor_id", json.Number("0"))
+	outmsg["hostname"] = getString(inmsg, "hostname", "")
+	outmsg["group"] = getString(inmsg, "group", "")
+	outmsg["os_type"] = getString(inmsg, "os_type", "")
+	
+	outmsgs := make([]map[string]interface{}, 0, 1)
+	outmsgs = append(outmsgs, outmsg)
+	return outmsgs, nil
+}
+
 func NewJSONProcessor(newConfig Config) *JsonMessageProcessor {
 	jmp := new(JsonMessageProcessor)
 	jmp.DebugFlag = newConfig.DebugFlag
@@ -910,6 +991,9 @@ func NewJSONProcessor(newConfig Config) *JsonMessageProcessor {
 
 	jmp.messageHandlers["alert.watchlist.hit.ingress.process"] = jmp.alertWatchlistHitProcess
 	jmp.messageHandlers["alert.watchlist.hit.query.process"] = jmp.alertWatchlistHitProcess
+	jmp.messageHandlers["alert.watchlist.hit.ingress.binary"] = jmp.alertWatchlistHitBinary
+	jmp.messageHandlers["alert.watchlist.hit.query.binary"] = jmp.alertWatchlistHitBinary
+	jmp.messageHandlers["alert.watchlist.hit.ingress.host"] = jmp.alertWatchlistHitHost
 
 	jmp.messageHandlers["binarystore.file.added"] = jmp.binarystoreFileAdded
 	jmp.messageHandlers["binaryinfo.observed"] = jmp.binaryinfoObserved
